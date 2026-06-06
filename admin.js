@@ -1,0 +1,485 @@
+(function () {
+  const client = POS.getClient();
+  const todayKey = POS.todayKey();
+  let activeRange = "today";
+  let products = [];
+  let orders = [];
+  let closeouts = [];
+
+  const el = {
+    rangeText: document.querySelector("#rangeText"),
+    salesTotal: document.querySelector("#salesTotal"),
+    orderCount: document.querySelector("#orderCount"),
+    itemCount: document.querySelector("#itemCount"),
+    avgOrder: document.querySelector("#avgOrder"),
+    productRanking: document.querySelector("#productRanking"),
+    paymentSummary: document.querySelector("#paymentSummary"),
+    categorySummary: document.querySelector("#categorySummary"),
+    stockSummary: document.querySelector("#stockSummary"),
+    ordersBody: document.querySelector("#ordersBody"),
+    exportCsv: document.querySelector("#exportCsv"),
+    expectedCash: document.querySelector("#expectedCash"),
+    actualCash: document.querySelector("#actualCash"),
+    cashDiff: document.querySelector("#cashDiff"),
+    saveCloseout: document.querySelector("#saveCloseout"),
+    closeHistory: document.querySelector("#closeHistory"),
+    menuEditor: document.querySelector("#menuEditor")
+  };
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function escapeAttr(value) {
+    return escapeHtml(value).replace(/'/g, "&#39;");
+  }
+
+  function imageFileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("图片读取失败"));
+      reader.onload = () => {
+        const image = new Image();
+        image.onerror = () => reject(new Error("图片格式无法识别"));
+        image.onload = () => {
+          const maxSide = 1200;
+          const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(image.width * scale));
+          canvas.height = Math.max(1, Math.round(image.height * scale));
+          const context = canvas.getContext("2d");
+          context.fillStyle = "#ffffff";
+          context.fillRect(0, 0, canvas.width, canvas.height);
+          context.drawImage(image, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", 0.86));
+        };
+        image.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function loadAll() {
+    const productsResult = await client
+      .from("products")
+      .select("*")
+      .order("sort_order", { ascending: true });
+    if (productsResult.error) throw productsResult.error;
+    products = productsResult.data || [];
+
+    const ordersResult = await client
+      .from("orders")
+      .select("id, day, time_text, payment_method, total, status, created_at, order_items(product_id, name, qty, price)")
+      .order("created_at", { ascending: false });
+    if (ordersResult.error) throw ordersResult.error;
+    orders = ordersResult.data || [];
+
+    const closeoutsResult = await client
+      .from("closeouts")
+      .select("*")
+      .order("day", { ascending: false });
+    if (closeoutsResult.error) throw closeoutsResult.error;
+    closeouts = closeoutsResult.data || [];
+  }
+
+  async function refresh() {
+    await loadAll();
+    render();
+  }
+
+  function productById(id) {
+    return products.find(product => product.id === id);
+  }
+
+  function filteredOrders(includeVoid) {
+    const base = includeVoid ? orders : orders.filter(order => order.status !== "void");
+    if (activeRange === "all") return base;
+    if (activeRange === "today") {
+      return base.filter(order => order.day === todayKey);
+    }
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 6);
+    const cutoffKey = cutoff.toISOString().slice(0, 10);
+    return base.filter(order => order.day >= cutoffKey);
+  }
+
+  function addToMap(map, key, qty, amount) {
+    const current = map.get(key) || { qty: 0, amount: 0 };
+    current.qty += qty;
+    current.amount += amount;
+    map.set(key, current);
+  }
+
+  function renderBars(container, rows, emptyText) {
+    if (!rows.length) {
+      container.innerHTML = `<div class="empty">${emptyText}</div>`;
+      return;
+    }
+    const max = Math.max(...rows.map(row => row.amount || row.qty), 1);
+    container.innerHTML = rows.map(row => {
+      const value = row.amount || row.qty;
+      const width = Math.max(4, (value / max) * 100);
+      const detail = row.amount ? `${POS.money(row.amount)} · ${row.qty} 件` : `${row.qty} 件`;
+      return `
+        <div class="bar-row">
+          <div class="bar-label"><strong>${row.name}</strong><span>${detail}</span></div>
+          <div class="bar"><span style="width: ${width}%"></span></div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  function activeOrdersForDay(day) {
+    return orders.filter(order => order.day === day && order.status !== "void");
+  }
+
+  function todayCashExpected() {
+    return activeOrdersForDay(todayKey)
+      .filter(order => order.payment_method === "现金")
+      .reduce((sum, order) => sum + order.total, 0);
+  }
+
+  function todayCloseout() {
+    return closeouts.find(closeout => closeout.day === todayKey);
+  }
+
+  function renderCloseout() {
+    const expected = todayCashExpected();
+    const closeout = todayCloseout();
+    if (!el.actualCash.value && closeout) {
+      el.actualCash.value = closeout.actual_cash;
+    }
+    const actual = Number(el.actualCash.value || (closeout ? closeout.actual_cash : 0));
+    const diff = actual - expected;
+
+    el.expectedCash.textContent = POS.money(expected);
+    el.cashDiff.textContent = POS.money(diff);
+    el.closeHistory.textContent = closeout
+      ? `已保存：系统现金 ${POS.money(closeout.expected_cash)}，实际现金 ${POS.money(closeout.actual_cash)}，差额 ${POS.money(closeout.diff)}，时间 ${closeout.time_text}`
+      : "今天还没有日结记录。";
+  }
+
+  function renderMenuEditor() {
+    el.menuEditor.innerHTML = products.map(product => `
+      <form class="menu-row" data-product-form="${escapeAttr(product.id)}">
+        <img class="menu-thumb" src="${escapeAttr(product.image_path)}" alt="${escapeAttr(product.name)}">
+        <label>
+          产品名
+          <input class="field-input" name="name" value="${escapeAttr(product.name)}" required>
+        </label>
+        <label>
+          中文说明
+          <input class="field-input" name="note" value="${escapeAttr(product.note)}">
+        </label>
+        <label>
+          分类
+          <input class="field-input" name="category" value="${escapeAttr(product.category)}" required>
+        </label>
+        <label>
+          价格 KIP
+          <input class="field-input" name="price" type="number" min="0" step="1000" value="${product.price}" required>
+        </label>
+        <label>
+          库存
+          <input class="field-input" name="stock" type="number" min="0" step="1" value="${product.stock}" required>
+        </label>
+        <label>
+          排序
+          <input class="field-input" name="sort_order" type="number" step="1" value="${product.sort_order}" required>
+        </label>
+        <label>
+          图片路径
+          <input class="field-input" name="image_path" value="${escapeAttr(product.image_path)}" required>
+        </label>
+        <label class="image-upload">
+          上传图片
+          <input type="file" accept="image/png,image/jpeg,image/webp" data-image-upload="${escapeAttr(product.id)}">
+          <span class="upload-hint">选择图片后自动更新</span>
+        </label>
+        <label class="soldout-check">
+          <input name="sold_out" type="checkbox" ${product.sold_out ? "checked" : ""}>
+          售罄
+        </label>
+        <button class="button primary" type="submit">保存</button>
+      </form>
+    `).join("");
+  }
+
+  function render() {
+    const activeOrders = filteredOrders(false);
+    const sales = activeOrders.reduce((sum, order) => sum + order.total, 0);
+    const itemCount = activeOrders.reduce((sum, order) => {
+      return sum + order.order_items.reduce((part, item) => part + item.qty, 0);
+    }, 0);
+
+    const productMap = new Map();
+    const paymentMap = new Map();
+    const categoryMap = new Map();
+
+    activeOrders.forEach(order => {
+      addToMap(paymentMap, order.payment_method, 1, order.total);
+      order.order_items.forEach(item => {
+        const product = productById(item.product_id);
+        const amount = item.price * item.qty;
+        addToMap(productMap, item.name, item.qty, amount);
+        addToMap(categoryMap, product ? product.category : "其他", item.qty, amount);
+      });
+    });
+
+    const productRows = [...productMap.entries()]
+      .map(([name, data]) => ({ name, ...data }))
+      .sort((a, b) => b.amount - a.amount);
+    const paymentRows = [...paymentMap.entries()]
+      .map(([name, data]) => ({ name, ...data }))
+      .sort((a, b) => b.amount - a.amount);
+    const categoryRows = [...categoryMap.entries()]
+      .map(([name, data]) => ({ name, ...data }))
+      .sort((a, b) => b.amount - a.amount);
+
+    const labels = {
+      today: "今天",
+      "7days": "近 7 天",
+      all: "全部订单"
+    };
+    el.rangeText.textContent = `${labels[activeRange]} · ${new Date().toLocaleDateString("zh-CN")}`;
+    el.salesTotal.textContent = POS.money(sales);
+    el.orderCount.textContent = activeOrders.length;
+    el.itemCount.textContent = itemCount;
+    el.avgOrder.textContent = POS.money(activeOrders.length ? Math.round(sales / activeOrders.length) : 0);
+
+    renderBars(el.productRanking, productRows, "当前范围内还没有销售。");
+    renderBars(el.paymentSummary, paymentRows, "当前范围内还没有付款记录。");
+    renderBars(el.categorySummary, categoryRows, "当前范围内还没有类别数据。");
+
+    el.stockSummary.innerHTML = products.map(product => `
+      <div class="stock-item">
+        <div>
+          <strong>${product.name}</strong>
+          <small>${product.note} · 库存 ${product.stock}</small>
+        </div>
+        <button class="mini-button ${product.sold_out ? "active" : ""}" data-soldout="${product.id}">
+          ${product.sold_out ? "已售罄" : "可售"}
+        </button>
+      </div>
+    `).join("");
+
+    const tableOrders = filteredOrders(true);
+    el.ordersBody.innerHTML = tableOrders.length ? tableOrders.map(order => {
+      const items = order.order_items.map(item => `${item.name} x${item.qty}`).join("、");
+      const isVoid = order.status === "void";
+      return `
+        <tr>
+          <td>${order.day}</td>
+          <td>${order.time_text}</td>
+          <td>${items}</td>
+          <td>${order.payment_method}</td>
+          <td><strong>${POS.money(order.total)}</strong></td>
+          <td>${isVoid ? "已作废" : "有效"}</td>
+          <td>${isVoid ? "" : `<button class="mini-button" data-void="${order.id}">作废</button>`}</td>
+        </tr>
+      `;
+    }).join("") : `<tr><td colspan="7">当前范围内还没有订单。</td></tr>`;
+
+    renderMenuEditor();
+    renderCloseout();
+  }
+
+  async function toggleSoldOut(productId) {
+    const product = products.find(item => item.id === productId);
+    if (!product) return;
+    const result = await client
+      .from("products")
+      .update({ sold_out: !product.sold_out })
+      .eq("id", productId);
+    if (result.error) {
+      POS.showToast(result.error.message);
+      return;
+    }
+    await refresh();
+  }
+
+  async function uploadProductImage(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const productId = input.dataset.imageUpload;
+    const form = input.closest("[data-product-form]");
+    const imagePathInput = form && form.querySelector("[name='image_path']");
+
+    if (!file.type.startsWith("image/")) {
+      POS.showToast("请选择图片文件");
+      input.value = "";
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      POS.showToast("图片不能超过 10MB");
+      input.value = "";
+      return;
+    }
+
+    const uploadLabel = input.closest(".image-upload");
+    uploadLabel.classList.add("uploading");
+    try {
+      const dataUrl = await imageFileToDataUrl(file);
+      if (imagePathInput) {
+        imagePathInput.value = dataUrl;
+      }
+
+      const updateResult = await client
+        .from("products")
+        .update({ image_path: dataUrl, updated_at: new Date().toISOString() })
+        .eq("id", productId);
+
+      if (updateResult.error) {
+        POS.showToast(updateResult.error.message);
+        return;
+      }
+
+      POS.showToast("图片已更新");
+      await refresh();
+    } catch (error) {
+      POS.showToast(error.message);
+    } finally {
+      uploadLabel.classList.remove("uploading");
+      input.value = "";
+    }
+  }
+
+  async function saveProduct(form) {
+    const productId = form.dataset.productForm;
+    const formData = new FormData(form);
+    const payload = {
+      name: String(formData.get("name") || "").trim(),
+      note: String(formData.get("note") || "").trim(),
+      category: String(formData.get("category") || "").trim(),
+      price: Number(formData.get("price") || 0),
+      stock: Number(formData.get("stock") || 0),
+      sort_order: Number(formData.get("sort_order") || 0),
+      image_path: String(formData.get("image_path") || "").trim(),
+      sold_out: formData.has("sold_out"),
+      updated_at: new Date().toISOString()
+    };
+
+    if (!payload.name || !payload.category || !payload.image_path) {
+      POS.showToast("产品名、分类和图片路径不能为空");
+      return;
+    }
+
+    if (!Number.isFinite(payload.price) || !Number.isFinite(payload.stock) || !Number.isFinite(payload.sort_order)) {
+      POS.showToast("价格、库存和排序必须是数字");
+      return;
+    }
+
+    const button = form.querySelector("button[type='submit']");
+    POS.setBusy(button, true, "保存中");
+    const result = await client
+      .from("products")
+      .update(payload)
+      .eq("id", productId);
+    POS.setBusy(button, false);
+
+    if (result.error) {
+      POS.showToast(result.error.message);
+      return;
+    }
+
+    POS.showToast("菜单已更新");
+    await refresh();
+  }
+
+  async function voidOrder(orderId) {
+    const confirmed = window.confirm("确认作废这笔订单？库存会自动加回。");
+    if (!confirmed) return;
+    const result = await client.rpc("void_order", { p_order_id: orderId });
+    if (result.error) {
+      POS.showToast(result.error.message);
+      return;
+    }
+    POS.showToast("订单已作废");
+    await refresh();
+  }
+
+  async function saveCloseout() {
+    const expected = todayCashExpected();
+    const actual = Number(el.actualCash.value || 0);
+    const payload = {
+      day: todayKey,
+      time_text: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
+      expected_cash: expected,
+      actual_cash: actual,
+      diff: actual - expected,
+      updated_at: new Date().toISOString()
+    };
+    const result = await client.from("closeouts").upsert(payload);
+    if (result.error) {
+      POS.showToast(result.error.message);
+      return;
+    }
+    POS.showToast("日结已保存");
+    await refresh();
+  }
+
+  function exportCsv() {
+    const rows = [["日期", "时间", "产品", "数量", "付款方式", "状态", "金额KIP"]];
+    filteredOrders(true).forEach(order => {
+      order.order_items.forEach(item => {
+        rows.push([
+          order.day,
+          order.time_text,
+          item.name,
+          item.qty,
+          order.payment_method,
+          order.status === "void" ? "已作废" : "有效",
+          item.price * item.qty
+        ]);
+      });
+    });
+    const csv = rows.map(row => row.map(POS.csvEscape).join(",")).join("\n");
+    const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `patuxai-pops-sales-${activeRange}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  document.querySelector(".range").addEventListener("click", event => {
+    const button = event.target.closest("[data-range]");
+    if (!button) return;
+    activeRange = button.dataset.range;
+    document.querySelectorAll("[data-range]").forEach(item => item.classList.toggle("active", item === button));
+    render();
+  });
+
+  document.body.addEventListener("click", event => {
+    const soldOutButton = event.target.closest("[data-soldout]");
+    if (soldOutButton) {
+      toggleSoldOut(soldOutButton.dataset.soldout);
+      return;
+    }
+    const voidButton = event.target.closest("[data-void]");
+    if (voidButton) {
+      voidOrder(voidButton.dataset.void);
+    }
+  });
+
+  el.actualCash.addEventListener("input", renderCloseout);
+  el.saveCloseout.addEventListener("click", saveCloseout);
+  el.exportCsv.addEventListener("click", exportCsv);
+  el.menuEditor.addEventListener("submit", event => {
+    event.preventDefault();
+    saveProduct(event.target);
+  });
+  el.menuEditor.addEventListener("change", event => {
+    const input = event.target.closest("[data-image-upload]");
+    if (!input) return;
+    uploadProductImage(input);
+  });
+
+  POS.initAuth(client, refresh).catch(error => POS.showToast(error.message));
+})();

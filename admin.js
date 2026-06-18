@@ -286,14 +286,19 @@
     renderBars(el.categorySummary, categoryRows, "当前范围内还没有类别数据。");
 
     el.stockSummary.innerHTML = products.map(product => `
-      <div class="stock-item">
+      <div class="stock-item" data-stock-row="${escapeAttr(product.id)}">
         <div>
           <strong>${product.name}</strong>
           <small>${product.note} · 库存 ${product.stock}</small>
         </div>
-        <button class="mini-button ${product.sold_out ? "active" : ""}" data-soldout="${product.id}">
-          ${product.sold_out ? "已售罄" : "可售"}
-        </button>
+        <div class="stock-controls">
+          <input class="field-input stock-input" data-stock-input="${escapeAttr(product.id)}" type="number" min="0" step="1" value="${product.stock}" aria-label="${escapeAttr(product.name)}库存">
+          <label class="compact-check">
+            <input data-stock-soldout="${escapeAttr(product.id)}" type="checkbox" ${product.sold_out ? "checked" : ""}>
+            售罄
+          </label>
+          <button class="mini-button primary" data-save-stock="${escapeAttr(product.id)}">保存库存</button>
+        </div>
       </div>
     `).join("");
 
@@ -330,6 +335,38 @@
       return;
     }
     await refresh();
+  }
+
+  async function saveStock(productId, button) {
+    const row = document.querySelector(`[data-stock-row="${productId}"]`);
+    const input = row && row.querySelector(`[data-stock-input="${productId}"]`);
+    const soldOut = row && row.querySelector(`[data-stock-soldout="${productId}"]`);
+    const stock = Number(input ? input.value : NaN);
+
+    if (!Number.isFinite(stock) || stock < 0) {
+      POS.showToast("库存必须是 0 或更大的数字");
+      return false;
+    }
+
+    POS.setBusy(button, true, "保存中");
+    const result = await client
+      .from("products")
+      .update({
+        stock: Math.floor(stock),
+        sold_out: Boolean(soldOut && soldOut.checked),
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", productId);
+    POS.setBusy(button, false);
+
+    if (result.error) {
+      POS.showToast(result.error.message || "库存保存失败");
+      return false;
+    }
+
+    POS.showToast("库存已保存");
+    await refresh();
+    return true;
   }
 
   async function uploadProductImage(input) {
@@ -413,7 +450,22 @@
     POS.setBusy(button, false);
 
     if (result.error) {
-      POS.showToast(result.error.message);
+      const fallback = await client
+        .from("products")
+        .update({
+          stock: Math.floor(payload.stock),
+          sold_out: payload.sold_out,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", productId);
+
+      if (fallback.error) {
+        POS.showToast(fallback.error.message || result.error.message || "保存失败");
+        return;
+      }
+
+      POS.showToast("库存已保存");
+      await refresh();
       return;
     }
 
@@ -490,6 +542,11 @@
     const soldOutButton = event.target.closest("[data-soldout]");
     if (soldOutButton) {
       toggleSoldOut(soldOutButton.dataset.soldout);
+      return;
+    }
+    const saveStockButton = event.target.closest("[data-save-stock]");
+    if (saveStockButton) {
+      saveStock(saveStockButton.dataset.saveStock, saveStockButton);
       return;
     }
     const voidButton = event.target.closest("[data-void]");

@@ -75,7 +75,7 @@
 
       async function execute() {
         const params = new URLSearchParams();
-        if (state.select) params.set("select", state.select);
+        if (state.mode === "select" && state.select) params.set("select", state.select);
         state.filters.forEach(filter => params.set(filter.column, `eq.${filter.value}`));
         if (state.order) {
           params.set("order", `${state.order.column}.${state.order.ascending ? "asc" : "desc"}`);

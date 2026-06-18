@@ -349,17 +349,24 @@
     }
 
     POS.setBusy(button, true, "保存中");
-    const result = await client
-      .from("products")
-      .update({
-        stock: Math.floor(stock),
-        sold_out: Boolean(soldOut && soldOut.checked),
-        updated_at: new Date().toISOString()
-      })
-      .eq("id", productId);
-    POS.setBusy(button, false);
+    let result;
+    try {
+      result = await client
+        .from("products")
+        .update({
+          stock: Math.floor(stock),
+          sold_out: Boolean(soldOut && soldOut.checked),
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", productId);
+    } catch (error) {
+      POS.showToast(error.message || "库存保存失败");
+      return false;
+    } finally {
+      POS.setBusy(button, false);
+    }
 
-    if (result.error) {
+    if (result && result.error) {
       POS.showToast(result.error.message || "库存保存失败");
       return false;
     }
@@ -443,11 +450,18 @@
 
     const button = form.querySelector("button[type='submit']");
     POS.setBusy(button, true, "保存中");
-    const result = await client
-      .from("products")
-      .update(payload)
-      .eq("id", productId);
-    POS.setBusy(button, false);
+    let result;
+    try {
+      result = await client
+        .from("products")
+        .update(payload)
+        .eq("id", productId);
+    } catch (error) {
+      POS.showToast(error.message || "保存失败");
+      return;
+    } finally {
+      POS.setBusy(button, false);
+    }
 
     if (result.error) {
       const fallback = await client

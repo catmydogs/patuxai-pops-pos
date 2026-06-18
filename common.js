@@ -12,6 +12,26 @@
 
   function createRestClient(config) {
     const sessionKey = "patuxai-pops-session";
+    const requestTimeoutMs = 12000;
+
+    async function fetchWithTimeout(url, options) {
+      const supportsAbort = typeof AbortController !== "undefined";
+      const controller = supportsAbort ? new AbortController() : null;
+      const timer = controller ? window.setTimeout(() => controller.abort(), requestTimeoutMs) : null;
+      try {
+        return await window.fetch(url, {
+          ...(options || {}),
+          ...(controller ? { signal: controller.signal } : {})
+        });
+      } catch (error) {
+        if (error && error.name === "AbortError") {
+          throw new Error("网络超时，请检查网络后重试");
+        }
+        throw error;
+      } finally {
+        if (timer) window.clearTimeout(timer);
+      }
+    }
 
     function apiHeaders(extra) {
       const session = readSession();
@@ -47,7 +67,7 @@
     async function refreshSession(session) {
       if (!session || !session.refresh_token) return null;
       try {
-        const response = await window.fetch(`${config.SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+        const response = await fetchWithTimeout(`${config.SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
           method: "POST",
           headers: {
             apikey: config.SUPABASE_ANON_KEY,
@@ -105,9 +125,16 @@
           options.body = JSON.stringify(state.payload);
         }
 
-        const response = await window.fetch(url, options);
+        let response;
+        try {
+          response = await fetchWithTimeout(url, options);
+        } catch (error) {
+          return { data: null, error: { message: error.message || "网络请求失败" } };
+        }
+
         if (!response.ok) {
-          return { data: null, error: { message: await response.text() } };
+          const text = await response.text();
+          return { data: null, error: { message: text || "请求失败" } };
         }
         if (options.method === "GET") {
           return { data: await response.json(), error: null };
@@ -160,7 +187,7 @@
           return { data: { session }, error: null };
         },
         async signInWithPassword(credentials) {
-          const response = await window.fetch(`${config.SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+          const response = await fetchWithTimeout(`${config.SUPABASE_URL}/auth/v1/token?grant_type=password`, {
             method: "POST",
             headers: {
               apikey: config.SUPABASE_ANON_KEY,
@@ -181,13 +208,18 @@
         return builder(table);
       },
       async rpc(name, payload) {
-        const response = await window.fetch(`${config.SUPABASE_URL}/rest/v1/rpc/${name}`, {
-          method: "POST",
-          headers: apiHeaders({
-            "Content-Type": "application/json"
-          }),
-          body: JSON.stringify(payload || {})
-        });
+        let response;
+        try {
+          response = await fetchWithTimeout(`${config.SUPABASE_URL}/rest/v1/rpc/${name}`, {
+            method: "POST",
+            headers: apiHeaders({
+              "Content-Type": "application/json"
+            }),
+            body: JSON.stringify(payload || {})
+          });
+        } catch (error) {
+          return { data: null, error: { message: error.message || "网络请求失败" } };
+        }
         if (!response.ok) {
           return { data: null, error: { message: await response.text() } };
         }

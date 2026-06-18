@@ -33,6 +33,14 @@
       }
     }
 
+    function friendlyNetworkError(error) {
+      const message = String((error && error.message) || error || "");
+      if (/failed to fetch|load failed|networkerror/i.test(message)) {
+        return "无法连接数据库，请检查 iPad 网络后重试";
+      }
+      return message || "网络请求失败";
+    }
+
     function apiHeaders(extra) {
       const session = readSession();
       const headers = {
@@ -129,12 +137,17 @@
         try {
           response = await fetchWithTimeout(url, options);
         } catch (error) {
-          return { data: null, error: { message: error.message || "网络请求失败" } };
+          return { data: null, error: { message: friendlyNetworkError(error) } };
         }
 
         if (!response.ok) {
           const text = await response.text();
-          return { data: null, error: { message: text || "请求失败" } };
+          let message = text || "请求失败";
+          try {
+            const data = JSON.parse(text);
+            message = data.message || data.error_description || data.error || message;
+          } catch (error) {}
+          return { data: null, error: { message } };
         }
         if (options.method === "GET") {
           return { data: await response.json(), error: null };
@@ -187,14 +200,19 @@
           return { data: { session }, error: null };
         },
         async signInWithPassword(credentials) {
-          const response = await fetchWithTimeout(`${config.SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-            method: "POST",
-            headers: {
-              apikey: config.SUPABASE_ANON_KEY,
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify(credentials)
-          });
+          let response;
+          try {
+            response = await fetchWithTimeout(`${config.SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+              method: "POST",
+              headers: {
+                apikey: config.SUPABASE_ANON_KEY,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify(credentials)
+            });
+          } catch (error) {
+            return { data: null, error: { message: friendlyNetworkError(error) } };
+          }
           const data = await response.json();
           if (!response.ok) return { data: null, error: { message: data.error_description || data.message || "登录失败" } };
           return { data: { session: saveSession(data), user: data.user }, error: null };
@@ -218,7 +236,7 @@
             body: JSON.stringify(payload || {})
           });
         } catch (error) {
-          return { data: null, error: { message: error.message || "网络请求失败" } };
+          return { data: null, error: { message: friendlyNetworkError(error) } };
         }
         if (!response.ok) {
           return { data: null, error: { message: await response.text() } };

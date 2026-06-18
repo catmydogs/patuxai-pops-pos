@@ -23,7 +23,8 @@
     cashDiff: document.querySelector("#cashDiff"),
     saveCloseout: document.querySelector("#saveCloseout"),
     closeHistory: document.querySelector("#closeHistory"),
-    menuEditor: document.querySelector("#menuEditor")
+    menuEditor: document.querySelector("#menuEditor"),
+    testConnection: document.querySelector("#testConnection")
   };
 
   if (el.menuEditor) {
@@ -338,6 +339,11 @@
   }
 
   async function saveStock(productId, button) {
+    if (!window.navigator.onLine) {
+      POS.showToast("当前离线，库存需要联网保存");
+      return false;
+    }
+
     const row = document.querySelector(`[data-stock-row="${productId}"]`);
     const input = row && row.querySelector(`[data-stock-input="${productId}"]`);
     const soldOut = row && row.querySelector(`[data-stock-soldout="${productId}"]`);
@@ -424,6 +430,11 @@
   }
 
   async function saveProduct(form) {
+    if (!window.navigator.onLine) {
+      POS.showToast("当前离线，菜单需要联网保存");
+      return;
+    }
+
     const productId = form.dataset.productForm;
     const formData = new FormData(form);
     const payload = {
@@ -544,6 +555,22 @@
     URL.revokeObjectURL(url);
   }
 
+  async function testConnection() {
+    POS.setBusy(el.testConnection, true, "测试中");
+    const result = await client
+      .from("products")
+      .select("id")
+      .order("sort_order", { ascending: true });
+    POS.setBusy(el.testConnection, false);
+
+    if (result.error) {
+      POS.showToast(result.error.message || "数据库连接失败");
+      return;
+    }
+
+    POS.showToast("数据库连接正常");
+  }
+
   document.querySelector(".range").addEventListener("click", event => {
     const button = event.target.closest("[data-range]");
     if (!button) return;
@@ -572,6 +599,7 @@
   el.actualCash.addEventListener("input", renderCloseout);
   el.saveCloseout.addEventListener("click", saveCloseout);
   el.exportCsv.addEventListener("click", exportCsv);
+  if (el.testConnection) el.testConnection.addEventListener("click", testConnection);
   el.menuEditor.addEventListener("submit", event => {
     event.preventDefault();
     saveProduct(event.target);

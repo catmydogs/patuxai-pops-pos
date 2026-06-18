@@ -26,6 +26,10 @@
     menuEditor: document.querySelector("#menuEditor")
   };
 
+  if (el.menuEditor) {
+    el.menuEditor.innerHTML = `<div class="empty">正在加载菜单...</div>`;
+  }
+
   function escapeHtml(value) {
     return String(value ?? "")
       .replace(/&/g, "&amp;")
@@ -64,26 +68,47 @@
   }
 
   async function loadAll() {
-    const productsResult = await client
-      .from("products")
-      .select("*")
-      .order("sort_order", { ascending: true });
-    if (productsResult.error) throw productsResult.error;
-    products = productsResult.data || [];
+    const issues = [];
 
-    const ordersResult = await client
-      .from("orders")
-      .select("id, day, time_text, payment_method, total, status, created_at, order_items(product_id, name, qty, price)")
-      .order("created_at", { ascending: false });
-    if (ordersResult.error) throw ordersResult.error;
-    orders = ordersResult.data || [];
+    try {
+      const productsResult = await client
+        .from("products")
+        .select("*")
+        .order("sort_order", { ascending: true });
+      if (productsResult.error) throw productsResult.error;
+      products = productsResult.data && productsResult.data.length ? productsResult.data : POS.productCatalog;
+    } catch (error) {
+      products = POS.productCatalog;
+      issues.push("菜单");
+    }
 
-    const closeoutsResult = await client
-      .from("closeouts")
-      .select("*")
-      .order("day", { ascending: false });
-    if (closeoutsResult.error) throw closeoutsResult.error;
-    closeouts = closeoutsResult.data || [];
+    try {
+      const ordersResult = await client
+        .from("orders")
+        .select("id, day, time_text, payment_method, total, status, created_at, order_items(product_id, name, qty, price)")
+        .order("created_at", { ascending: false });
+      if (ordersResult.error) throw ordersResult.error;
+      orders = ordersResult.data || [];
+    } catch (error) {
+      orders = [];
+      issues.push("订单");
+    }
+
+    try {
+      const closeoutsResult = await client
+        .from("closeouts")
+        .select("*")
+        .order("day", { ascending: false });
+      if (closeoutsResult.error) throw closeoutsResult.error;
+      closeouts = closeoutsResult.data || [];
+    } catch (error) {
+      closeouts = [];
+      issues.push("日结");
+    }
+
+    if (issues.length) {
+      POS.showToast(`${issues.join("、")}数据暂时未完全加载`);
+    }
   }
 
   async function refresh() {
@@ -164,6 +189,11 @@
   }
 
   function renderMenuEditor() {
+    if (!products.length) {
+      el.menuEditor.innerHTML = `<div class="empty">没有加载到产品。请刷新页面或重新登录。</div>`;
+      return;
+    }
+
     el.menuEditor.innerHTML = products.map(product => `
       <form class="menu-row" data-product-form="${escapeAttr(product.id)}">
         <img class="menu-thumb" src="${escapeAttr(product.image_path)}" alt="${escapeAttr(product.name)}">

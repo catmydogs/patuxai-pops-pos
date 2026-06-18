@@ -276,6 +276,35 @@ h1 {
   margin-bottom: 18px;
 }
 
+.admin-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: -4px 0 18px;
+}
+
+.admin-shortcuts a {
+  min-height: 52px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-weight: 750;
+  color: var(--ink);
+  box-shadow: 0 4px 16px rgba(31, 45, 61, 0.05);
+}
+
+.admin-shortcuts a:active {
+  transform: scale(0.98);
+}
+
+.anchor-panel {
+  scroll-margin-top: 18px;
+}
+
 .tab,
 .range button {
   background: #fff;
@@ -766,7 +795,8 @@ th {
   .reports,
   .stats,
   .dashboard,
-  .close-form {
+  .close-form,
+  .admin-shortcuts {
     grid-template-columns: 1fr 1fr;
   }
 
@@ -806,7 +836,8 @@ th {
   .reports,
   .stats,
   .dashboard,
-  .close-form {
+  .close-form,
+  .admin-shortcuts {
     grid-template-columns: 1fr;
   }
 

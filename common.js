@@ -12,7 +12,7 @@
 
   function createRestClient(config) {
     const sessionKey = "patuxai-pops-session";
-    const requestTimeoutMs = 12000;
+    const requestTimeoutMs = 30000;
 
     async function fetchWithTimeout(url, options) {
       const supportsAbort = typeof AbortController !== "undefined";
@@ -25,7 +25,7 @@
         });
       } catch (error) {
         if (error && error.name === "AbortError") {
-          throw new Error("网络超时，请检查网络后重试");
+          throw new Error("数据库响应超时，请稍后重试");
         }
         throw error;
       } finally {
@@ -41,8 +41,27 @@
       return message || "网络请求失败";
     }
 
-    function apiHeaders(extra) {
+    function clearSession() {
+      window.localStorage.removeItem(sessionKey);
+    }
+
+    function sessionNeedsRefresh(session) {
+      return session && session.expires_at && session.expires_at - 90 < Math.floor(Date.now() / 1000);
+    }
+
+    async function activeSessionForRequest() {
       const session = readSession();
+      if (!sessionNeedsRefresh(session)) return session;
+
+      const refreshed = await refreshSession(session);
+      if (refreshed) return refreshed;
+
+      clearSession();
+      throw new Error("登录已过期，请重新登录");
+    }
+
+    async function apiHeaders(extra) {
+      const session = await activeSessionForRequest();
       const headers = {
         apikey: config.SUPABASE_ANON_KEY,
         Authorization: `Bearer ${(session && session.access_token) || config.SUPABASE_ANON_KEY}`
@@ -86,8 +105,26 @@
         if (!response.ok) return window.navigator.onLine ? null : session;
         return saveSession(await response.json());
       } catch (error) {
-        return session;
+        return window.navigator.onLine ? null : session;
       }
+    }
+
+    function normalizeApiError(text) {
+      let message = text || "请求失败";
+      try {
+        const data = JSON.parse(text);
+        message = data.message || data.error_description || data.error || message;
+        if (data.code === "PGRST303" || /jwt expired/i.test(message)) {
+          clearSession();
+          return "登录已过期，请重新登录";
+        }
+      } catch (error) {
+        if (/jwt expired/i.test(message)) {
+          clearSession();
+          return "登录已过期，请重新登录";
+        }
+      }
+      return message;
     }
 
     function builder(table) {
@@ -112,12 +149,12 @@
         const url = `${config.SUPABASE_URL}/rest/v1/${state.table}?${params.toString()}`;
         const options = {
           method: "GET",
-          headers: apiHeaders()
+          headers: await apiHeaders()
         };
 
         if (state.mode === "update") {
           options.method = "PATCH";
-          options.headers = apiHeaders({
+          options.headers = await apiHeaders({
             "Content-Type": "application/json",
             Prefer: "return=minimal"
           });
@@ -126,7 +163,7 @@
 
         if (state.mode === "upsert") {
           options.method = "POST";
-          options.headers = apiHeaders({
+          options.headers = await apiHeaders({
             "Content-Type": "application/json",
             Prefer: "resolution=merge-duplicates,return=minimal"
           });
@@ -142,12 +179,7 @@
 
         if (!response.ok) {
           const text = await response.text();
-          let message = text || "请求失败";
-          try {
-            const data = JSON.parse(text);
-            message = data.message || data.error_description || data.error || message;
-          } catch (error) {}
-          return { data: null, error: { message } };
+          return { data: null, error: { message: normalizeApiError(text) } };
         }
         if (options.method === "GET") {
           return { data: await response.json(), error: null };
@@ -193,8 +225,9 @@
         async getSession() {
           const session = readSession();
           if (!session) return { data: { session: null }, error: null };
-          if (session.expires_at && session.expires_at - 60 < Math.floor(Date.now() / 1000)) {
+          if (sessionNeedsRefresh(session)) {
             const refreshed = await refreshSession(session);
+            if (!refreshed && window.navigator.onLine) clearSession();
             return { data: { session: refreshed }, error: null };
           }
           return { data: { session }, error: null };
@@ -230,7 +263,7 @@
         try {
           response = await fetchWithTimeout(`${config.SUPABASE_URL}/rest/v1/rpc/${name}`, {
             method: "POST",
-            headers: apiHeaders({
+            headers: await apiHeaders({
               "Content-Type": "application/json"
             }),
             body: JSON.stringify(payload || {})
@@ -239,7 +272,7 @@
           return { data: null, error: { message: friendlyNetworkError(error) } };
         }
         if (!response.ok) {
-          return { data: null, error: { message: await response.text() } };
+          return { data: null, error: { message: normalizeApiError(await response.text()) } };
         }
         const text = await response.text();
         return { data: text ? JSON.parse(text) : null, error: null };

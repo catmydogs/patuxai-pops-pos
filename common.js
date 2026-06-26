@@ -372,22 +372,50 @@
     const error = document.querySelector("#authError");
     const signedIn = document.querySelector("#signedInAs");
     const logout = document.querySelector("#logoutBtn");
+    let ready = false;
+    let checkingSession = false;
+    let lastSessionCheck = 0;
 
     function showAuth(show) {
       document.body.classList.toggle("locked", show);
       if (screen) screen.hidden = !show;
     }
 
-    async function boot() {
-      const result = await client.auth.getSession();
-      const session = result.data && result.data.session;
-      if (!session) {
-        showAuth(true);
-        return;
+    async function checkSession(options) {
+      if (checkingSession) return true;
+      const now = Date.now();
+      const force = options && options.force;
+      if (!force && now - lastSessionCheck < 120000) return true;
+      checkingSession = true;
+      lastSessionCheck = now;
+
+      try {
+        const result = await client.auth.getSession();
+        const session = result.data && result.data.session;
+        if (!session) {
+          ready = false;
+          showAuth(true);
+          POS.showToast("登录已过期，请重新登录");
+          return false;
+        }
+        showAuth(false);
+        if (signedIn) signedIn.textContent = session.user.email || "";
+        setSyncStatus(window.navigator.onLine ? "在线 · 已就绪" : "离线", window.navigator.onLine ? "online" : "offline");
+        if (!ready || force) {
+          ready = true;
+          await onReady(session);
+        }
+        return true;
+      } catch (error) {
+        if (window.navigator.onLine) POS.showToast(error.message || "登录检查失败");
+        return false;
+      } finally {
+        checkingSession = false;
       }
-      showAuth(false);
-      if (signedIn) signedIn.textContent = session.user.email || "";
-      await onReady(session);
+    }
+
+    async function boot() {
+      await checkSession({ force: true });
     }
 
     if (form) {
@@ -415,6 +443,30 @@
         window.location.reload();
       });
     }
+
+    window.addEventListener("pageshow", () => {
+      if (!document.body.classList.contains("locked")) checkSession({ force: true });
+    });
+
+    window.addEventListener("focus", () => {
+      if (!document.body.classList.contains("locked")) checkSession();
+    });
+
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden && !document.body.classList.contains("locked")) {
+        checkSession({ force: true });
+      }
+    });
+
+    window.addEventListener("online", () => {
+      if (!document.body.classList.contains("locked")) checkSession({ force: true });
+    });
+
+    window.setInterval(() => {
+      if (!document.hidden && !document.body.classList.contains("locked")) {
+        checkSession();
+      }
+    }, 600000);
 
     await boot();
   }

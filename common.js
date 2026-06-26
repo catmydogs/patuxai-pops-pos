@@ -1,13 +1,13 @@
 (function () {
   const productCatalog = [
-    { id: "mango-passion", name: "Mango & Passion Fruit", category: "Patuxai Pops", price: 55000, stock: 50, image_path: "assets/products/mango-passion.png", note: "芒果百香果", sort_order: 1 },
-    { id: "strawberry-milk", name: "Strawberry Milk", category: "Patuxai Pops", price: 55000, stock: 50, image_path: "assets/products/strawberry-milk.png", note: "草莓牛奶", sort_order: 2 },
-    { id: "pistachio", name: "Pistachio", category: "Patuxai Pops", price: 55000, stock: 50, image_path: "assets/products/pistachio.png", note: "开心果", sort_order: 3 },
-    { id: "coconut-butterfly-pea", name: "Coconut Butterfly Pea", category: "Patuxai Pops", price: 55000, stock: 50, image_path: "assets/products/coconut-butterfly-pea.png", note: "椰香蝶豆花", sort_order: 4 },
-    { id: "lychee-rose-soda", name: "Lychee Rose Soda", category: "Signature Soda", price: 55000, stock: 50, image_path: "assets/products/lychee-rose-soda.png", note: "荔枝玫瑰苏打", sort_order: 5 },
-    { id: "patuxai-sunset-soda", name: "Patuxai Sunset Soda", category: "Signature Soda", price: 55000, stock: 50, image_path: "assets/products/patuxai-sunset-soda.png", note: "百香果菠萝气泡", sort_order: 6 },
-    { id: "peach-jasmine-sparkle", name: "Peach Jasmine Sparkle", category: "Signature Soda", price: 55000, stock: 50, image_path: "assets/products/peach-jasmine-sparkle.png", note: "蜜桃茉莉气泡", sort_order: 7 },
-    { id: "grapefruit-sparkle", name: "Grapefruit Sparkle", category: "Signature Soda", price: 55000, stock: 50, image_path: "assets/products/grapefruit-sparkle.png", note: "西柚气泡", sort_order: 8 }
+    { id: "mango-passion", name: "Mango & Passion Fruit", category: "Patuxai Pops", price: 55000, stock: 50, sold_out: false, is_active: true, image_path: "assets/products/mango-passion.png", note: "芒果百香果", sort_order: 1 },
+    { id: "strawberry-milk", name: "Strawberry Milk", category: "Patuxai Pops", price: 55000, stock: 50, sold_out: false, is_active: true, image_path: "assets/products/strawberry-milk.png", note: "草莓牛奶", sort_order: 2 },
+    { id: "pistachio", name: "Pistachio", category: "Patuxai Pops", price: 55000, stock: 50, sold_out: false, is_active: true, image_path: "assets/products/pistachio.png", note: "开心果", sort_order: 3 },
+    { id: "coconut-butterfly-pea", name: "Coconut Butterfly Pea", category: "Patuxai Pops", price: 55000, stock: 50, sold_out: false, is_active: true, image_path: "assets/products/coconut-butterfly-pea.png", note: "椰香蝶豆花", sort_order: 4 },
+    { id: "lychee-rose-soda", name: "Lychee Rose Soda", category: "Signature Soda", price: 55000, stock: 50, sold_out: false, is_active: true, image_path: "assets/products/lychee-rose-soda.png", note: "荔枝玫瑰苏打", sort_order: 5 },
+    { id: "patuxai-sunset-soda", name: "Patuxai Sunset Soda", category: "Signature Soda", price: 55000, stock: 50, sold_out: false, is_active: true, image_path: "assets/products/patuxai-sunset-soda.png", note: "百香果菠萝气泡", sort_order: 6 },
+    { id: "peach-jasmine-sparkle", name: "Peach Jasmine Sparkle", category: "Signature Soda", price: 55000, stock: 50, sold_out: false, is_active: true, image_path: "assets/products/peach-jasmine-sparkle.png", note: "蜜桃茉莉气泡", sort_order: 7 },
+    { id: "grapefruit-sparkle", name: "Grapefruit Sparkle", category: "Signature Soda", price: 55000, stock: 50, sold_out: false, is_active: true, image_path: "assets/products/grapefruit-sparkle.png", note: "西柚气泡", sort_order: 8 }
   ];
 
   function createRestClient(config) {

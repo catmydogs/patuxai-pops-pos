@@ -645,7 +645,7 @@ aside {
 
 .stock-controls {
   display: grid;
-  grid-template-columns: 82px 110px minmax(120px, 1fr) auto auto;
+  grid-template-columns: 82px 110px minmax(120px, 1fr) auto auto auto;
   gap: 8px;
   align-items: center;
 }

@@ -249,6 +249,10 @@
           <input name="sold_out" type="checkbox" ${product.sold_out ? "checked" : ""}>
           售罄
         </label>
+        <label class="soldout-check">
+          <input name="is_active" type="checkbox" ${product.is_active !== false ? "checked" : ""}>
+          前台显示
+        </label>
         <button class="button primary" type="submit">保存</button>
       </form>
     `).join("");
@@ -341,7 +345,7 @@
       <div class="stock-item" data-stock-row="${escapeAttr(product.id)}">
         <div>
           <strong>${product.name}</strong>
-          <small>${product.note} · 库存 ${product.stock}</small>
+          <small>${product.note} · 库存 ${product.stock} · ${product.is_active === false ? "已下架" : "上架中"}</small>
         </div>
         <div class="stock-controls">
           <input class="field-input stock-input" data-stock-input="${escapeAttr(product.id)}" type="number" min="0" step="1" value="${product.stock}" aria-label="${escapeAttr(product.name)}库存">
@@ -355,6 +359,9 @@
             <input data-stock-soldout="${escapeAttr(product.id)}" type="checkbox" ${product.sold_out ? "checked" : ""}>
             售罄
           </label>
+          <button class="mini-button ${product.is_active === false ? "active" : ""}" data-toggle-active="${escapeAttr(product.id)}">
+            ${product.is_active === false ? "重新上架" : "下架"}
+          </button>
           <button class="mini-button primary" data-save-stock="${escapeAttr(product.id)}">保存库存</button>
         </div>
       </div>
@@ -507,6 +514,7 @@
       sort_order: Number(formData.get("sort_order") || 0),
       image_path: String(formData.get("image_path") || "").trim(),
       sold_out: formData.has("sold_out"),
+      is_active: formData.has("is_active"),
       updated_at: new Date().toISOString()
     };
 
@@ -632,6 +640,28 @@
     POS.showToast("数据库连接正常");
   }
 
+  async function toggleActive(productId, button) {
+    const product = products.find(item => item.id === productId);
+    if (!product) return;
+    POS.setBusy(button, true, product.is_active === false ? "上架中" : "下架中");
+    const result = await client
+      .from("products")
+      .update({
+        is_active: product.is_active === false,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", productId);
+    POS.setBusy(button, false);
+
+    if (result.error) {
+      POS.showToast(result.error.message && result.error.message.includes("is_active") ? "需要先执行上下架数据库升级" : result.error.message || "上下架失败");
+      return;
+    }
+
+    POS.showToast(product.is_active === false ? "产品已上架" : "产品已下架，前台不再显示");
+    await refresh();
+  }
+
   document.querySelector(".range").addEventListener("click", event => {
     const button = event.target.closest("[data-range]");
     if (!button) return;
@@ -649,6 +679,11 @@
     const saveStockButton = event.target.closest("[data-save-stock]");
     if (saveStockButton) {
       saveStock(saveStockButton.dataset.saveStock, saveStockButton);
+      return;
+    }
+    const activeButton = event.target.closest("[data-toggle-active]");
+    if (activeButton) {
+      toggleActive(activeButton.dataset.toggleActive, activeButton);
       return;
     }
     const voidButton = event.target.closest("[data-void]");

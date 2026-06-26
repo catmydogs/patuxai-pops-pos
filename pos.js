@@ -86,10 +86,12 @@
         .select("*")
         .order("sort_order", { ascending: true });
       if (result.error) throw result.error;
-      products = result.data && result.data.length ? result.data : POS.productCatalog;
+      products = (result.data && result.data.length ? result.data : POS.productCatalog)
+        .filter(product => product.is_active !== false);
       writeJson(productsCacheKey, products);
     } catch (error) {
-      products = readJson(productsCacheKey, POS.productCatalog);
+      products = readJson(productsCacheKey, POS.productCatalog)
+        .filter(product => product.is_active !== false);
       POS.showToast("已使用本地菜单");
     }
   }

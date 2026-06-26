@@ -5,6 +5,7 @@
   let products = [];
   let orders = [];
   let closeouts = [];
+  let inventoryMovements = [];
 
   const el = {
     rangeText: document.querySelector("#rangeText"),
@@ -16,6 +17,7 @@
     paymentSummary: document.querySelector("#paymentSummary"),
     categorySummary: document.querySelector("#categorySummary"),
     stockSummary: document.querySelector("#stockSummary"),
+    inventoryMovements: document.querySelector("#inventoryMovements"),
     ordersBody: document.querySelector("#ordersBody"),
     exportCsv: document.querySelector("#exportCsv"),
     expectedCash: document.querySelector("#expectedCash"),
@@ -105,6 +107,18 @@
     } catch (error) {
       closeouts = [];
       issues.push("日结");
+    }
+
+    try {
+      const movementsResult = await client
+        .from("inventory_movements")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (movementsResult.error) throw movementsResult.error;
+      inventoryMovements = (movementsResult.data || []).slice(0, 60);
+    } catch (error) {
+      inventoryMovements = [];
+      issues.push("库存记录");
     }
 
     if (issues.length) {
@@ -240,6 +254,43 @@
     `).join("");
   }
 
+  function reasonText(reason) {
+    const labels = {
+      sale: "销售扣减",
+      restock: "补货",
+      correction: "盘点修正",
+      waste: "损耗",
+      void: "作废加回"
+    };
+    return labels[reason] || reason || "其他";
+  }
+
+  function renderInventoryMovements() {
+    if (!el.inventoryMovements) return;
+    if (!inventoryMovements.length) {
+      el.inventoryMovements.innerHTML = `<div class="empty">还没有库存记录。补货、盘点修正、销售扣减后会显示在这里。</div>`;
+      return;
+    }
+
+    el.inventoryMovements.innerHTML = inventoryMovements.map(item => {
+      const change = Number(item.change_qty || 0);
+      const sign = change > 0 ? "+" : "";
+      const tone = change > 0 ? "plus" : "minus";
+      return `
+        <div class="movement-item">
+          <div>
+            <strong>${escapeHtml(item.product_name)}</strong>
+            <small>${escapeHtml(item.day)} ${escapeHtml(item.time_text)} · ${reasonText(item.reason)}${item.note ? ` · ${escapeHtml(item.note)}` : ""}</small>
+          </div>
+          <div class="movement-numbers">
+            <strong class="${tone}">${sign}${change}</strong>
+            <small>${item.before_stock} → ${item.after_stock}</small>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
   function render() {
     const activeOrders = filteredOrders(false);
     const sales = activeOrders.reduce((sum, order) => sum + order.total, 0);
@@ -294,6 +345,12 @@
         </div>
         <div class="stock-controls">
           <input class="field-input stock-input" data-stock-input="${escapeAttr(product.id)}" type="number" min="0" step="1" value="${product.stock}" aria-label="${escapeAttr(product.name)}库存">
+          <select class="field-input stock-reason" data-stock-reason="${escapeAttr(product.id)}" aria-label="${escapeAttr(product.name)}库存原因">
+            <option value="restock">补货</option>
+            <option value="correction">盘点修正</option>
+            <option value="waste">损耗</option>
+          </select>
+          <input class="field-input stock-note" data-stock-note="${escapeAttr(product.id)}" placeholder="备注">
           <label class="compact-check">
             <input data-stock-soldout="${escapeAttr(product.id)}" type="checkbox" ${product.sold_out ? "checked" : ""}>
             售罄
@@ -321,6 +378,7 @@
     }).join("") : `<tr><td colspan="7">当前范围内还没有订单。</td></tr>`;
 
     renderMenuEditor();
+    renderInventoryMovements();
     renderCloseout();
   }
 
@@ -347,6 +405,8 @@
     const row = document.querySelector(`[data-stock-row="${productId}"]`);
     const input = row && row.querySelector(`[data-stock-input="${productId}"]`);
     const soldOut = row && row.querySelector(`[data-stock-soldout="${productId}"]`);
+    const reason = row && row.querySelector(`[data-stock-reason="${productId}"]`);
+    const note = row && row.querySelector(`[data-stock-note="${productId}"]`);
     const stock = Number(input ? input.value : NaN);
 
     if (!Number.isFinite(stock) || stock < 0) {
@@ -357,14 +417,15 @@
     POS.setBusy(button, true, "保存中");
     let result;
     try {
-      result = await client
-        .from("products")
-        .update({
-          stock: Math.floor(stock),
-          sold_out: Boolean(soldOut && soldOut.checked),
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", productId);
+      result = await client.rpc("adjust_stock", {
+        p_product_id: productId,
+        p_new_stock: Math.floor(stock),
+        p_sold_out: Boolean(soldOut && soldOut.checked),
+        p_reason: reason ? reason.value : "correction",
+        p_note: note ? note.value.trim() : "",
+        p_time_text: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
+        p_day: todayKey
+      });
     } catch (error) {
       POS.showToast(error.message || "库存保存失败");
       return false;
@@ -373,11 +434,11 @@
     }
 
     if (result && result.error) {
-      POS.showToast(result.error.message || "库存保存失败");
+      POS.showToast(result.error.message && result.error.message.includes("adjust_stock") ? "需要先执行库存记录数据库升级" : result.error.message || "库存保存失败");
       return false;
     }
 
-    POS.showToast("库存已保存");
+    POS.showToast("库存已保存并记录");
     await refresh();
     return true;
   }

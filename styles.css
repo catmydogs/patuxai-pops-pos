@@ -645,12 +645,14 @@ aside {
 
 .stock-controls {
   display: grid;
-  grid-template-columns: 96px auto auto;
+  grid-template-columns: 82px 110px minmax(120px, 1fr) auto auto;
   gap: 8px;
   align-items: center;
 }
 
-.stock-input {
+.stock-input,
+.stock-reason,
+.stock-note {
   min-height: 42px;
   padding: 8px 10px;
 }
@@ -669,6 +671,38 @@ aside {
 .compact-check input {
   width: 20px;
   height: 20px;
+}
+
+.movement-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.movement-item small,
+.movement-numbers small {
+  display: block;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.movement-numbers {
+  text-align: right;
+}
+
+.movement-numbers strong {
+  font-size: 18px;
+}
+
+.movement-numbers .plus {
+  color: var(--mint);
+}
+
+.movement-numbers .minus {
+  color: var(--danger);
 }
 
 .menu-editor {
@@ -837,7 +871,7 @@ th {
   }
 
   .stock-controls {
-    grid-template-columns: 96px auto minmax(120px, 1fr);
+    grid-template-columns: 82px 1fr;
   }
 
   .menu-row .button,
@@ -887,6 +921,14 @@ th {
 
   .stock-controls {
     grid-template-columns: 1fr;
+  }
+
+  .movement-item {
+    grid-template-columns: 1fr;
+  }
+
+  .movement-numbers {
+    text-align: left;
   }
 
   .menu-thumb {

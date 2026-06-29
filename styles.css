@@ -361,7 +361,7 @@ h1 {
 
 .sku-table {
   display: grid;
-  grid-template-columns: minmax(132px, 0.9fr) repeat(var(--flavor-count), minmax(145px, 1fr));
+  grid-template-columns: minmax(150px, 0.9fr) repeat(var(--flavor-count), minmax(155px, 1fr));
   gap: 8px;
   overflow-x: auto;
   padding-bottom: 4px;
@@ -372,7 +372,7 @@ h1 {
 .sku-shape,
 .sku-cell,
 .sku-empty {
-  min-height: 76px;
+  min-height: 92px;
   border-radius: 8px;
 }
 
@@ -399,6 +399,70 @@ h1 {
 
 .sku-shape {
   color: var(--ink);
+}
+
+.sku-flavor,
+.sku-shape {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.58)),
+    var(--sku-bg, none) center / cover no-repeat,
+    #fff;
+  box-shadow: 0 8px 24px rgba(31, 45, 61, 0.06);
+}
+
+.sku-flavor::before,
+.sku-shape::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--sku-bg, none) center / cover no-repeat;
+  opacity: 0.62;
+}
+
+.sku-flavor::after,
+.sku-shape::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.62));
+}
+
+.sku-flavor {
+  min-height: 104px;
+  align-items: flex-end;
+  color: #0d6d59;
+}
+
+.sku-flavor::before {
+  background-size: cover;
+  background-position: center 54%;
+}
+
+.sku-shape {
+  min-height: 110px;
+  align-items: flex-end;
+  color: #17212b;
+}
+
+.sku-shape::before {
+  background-size: 86% auto;
+  background-position: center 22%;
+  background-repeat: no-repeat;
+}
+
+.sku-flavor span,
+.sku-shape span {
+  position: relative;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 6px 16px rgba(31, 45, 61, 0.07);
 }
 
 .sku-cell {

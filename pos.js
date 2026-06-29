@@ -203,6 +203,28 @@
     return [...map.values()].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   }
 
+  const skuFlavorAssets = {
+    "Mango & Passion Fruit": "assets/products/mango-passion.png",
+    "Strawberry Milk": "assets/products/strawberry-milk.png",
+    "Japanese Melon": "assets/products/japanese-melon.png",
+    "Coconut + Butterfly Pea": "assets/products/coconut-butterfly-pea.png"
+  };
+
+  const skuShapeAssets = {
+    "Patuxai": "assets/shapes/shape-patuxai.png",
+    "I Love Laos": "assets/shapes/shape-i-love-laos.png",
+    "Elephant": "assets/shapes/shape-elephant.png",
+    "Frangipani Flower": "assets/shapes/shape-frangipani.png"
+  };
+
+  function assetUrl(path) {
+    return (window.POS_IMAGE_FALLBACKS && window.POS_IMAGE_FALLBACKS[path]) || path;
+  }
+
+  function imageStyle(path) {
+    return path ? `style="--sku-bg: url('${assetUrl(path)}')"` : "";
+  }
+
   function renderCategories() {
     if (skuProducts().length) {
       el.categoryTabs.hidden = true;
@@ -237,9 +259,15 @@
         </div>
         <div class="sku-table" style="--flavor-count: ${flavors.length}">
           <div class="sku-corner">形状</div>
-          ${flavors.map(flavor => `<div class="sku-flavor">${flavor.name}</div>`).join("")}
+          ${flavors.map(flavor => `
+            <div class="sku-flavor" ${imageStyle(skuFlavorAssets[flavor.name])}>
+              <span>${flavor.name}</span>
+            </div>
+          `).join("")}
           ${shapes.map(shape => `
-            <div class="sku-shape">${shape.name}</div>
+            <div class="sku-shape" ${imageStyle(skuShapeAssets[shape.name])}>
+              <span>${shape.name}</span>
+            </div>
             ${flavors.map(flavor => {
               const product = matrixProducts.find(item => item.shape === shape.name && item.flavor === flavor.name);
               if (!product || !matches(product)) return `<div class="sku-empty"></div>`;

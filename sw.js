@@ -1,4 +1,4 @@
-const CACHE_NAME = "patuxai-pops-pos-20260629-sku-matrix";
+const CACHE_NAME = "patuxai-pops-pos-20260629-sku-visuals";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -16,10 +16,15 @@ const APP_SHELL = [
   "./assets/products/strawberry-milk.png",
   "./assets/products/pistachio.png",
   "./assets/products/coconut-butterfly-pea.png",
+  "./assets/products/japanese-melon.png",
   "./assets/products/lychee-rose-soda.png",
   "./assets/products/patuxai-sunset-soda.png",
   "./assets/products/peach-jasmine-sparkle.png",
-  "./assets/products/grapefruit-sparkle.png"
+  "./assets/products/grapefruit-sparkle.png",
+  "./assets/shapes/shape-patuxai.png",
+  "./assets/shapes/shape-i-love-laos.png",
+  "./assets/shapes/shape-elephant.png",
+  "./assets/shapes/shape-frangipani.png"
 ];
 
 self.addEventListener("install", event => {

@@ -186,7 +186,30 @@
     if (synced && !silent) POS.showToast(`已同步 ${synced} 单`);
   }
 
+  function skuProducts() {
+    return products.filter(product => product.shape && product.flavor);
+  }
+
+  function orderedUnique(items, key, orderKey) {
+    const map = new Map();
+    items.forEach(item => {
+      const value = item[key];
+      if (!value || map.has(value)) return;
+      map.set(value, {
+        name: value,
+        order: Number(item[orderKey] || item.sort_order || 0)
+      });
+    });
+    return [...map.values()].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+  }
+
   function renderCategories() {
+    if (skuProducts().length) {
+      el.categoryTabs.hidden = true;
+      return;
+    }
+
+    el.categoryTabs.hidden = false;
     const categories = ["全部", ...new Set(products.map(product => product.category))];
     el.categoryTabs.innerHTML = categories.map(category => {
       const active = category === activeCategory ? "active" : "";
@@ -194,7 +217,56 @@
     }).join("");
   }
 
+  function renderSkuMatrix(matrixProducts) {
+    const query = el.searchInput.value.trim().toLowerCase();
+    const shapes = orderedUnique(matrixProducts, "shape", "shape_order");
+    const flavors = orderedUnique(matrixProducts, "flavor", "flavor_order");
+    const matches = product => {
+      if (!query) return true;
+      return `${product.name}${product.shape}${product.flavor}${product.note}`.toLowerCase().includes(query);
+    };
+
+    el.productGrid.innerHTML = `
+      <section class="sku-matrix" aria-label="形状口味矩阵">
+        <div class="sku-matrix-head">
+          <div>
+            <h2>选择形状 + 口味</h2>
+            <span>每格是一个独立库存 SKU</span>
+          </div>
+          <strong>${POS.money(55000)} / 个</strong>
+        </div>
+        <div class="sku-table" style="--flavor-count: ${flavors.length}">
+          <div class="sku-corner">形状</div>
+          ${flavors.map(flavor => `<div class="sku-flavor">${flavor.name}</div>`).join("")}
+          ${shapes.map(shape => `
+            <div class="sku-shape">${shape.name}</div>
+            ${flavors.map(flavor => {
+              const product = matrixProducts.find(item => item.shape === shape.name && item.flavor === flavor.name);
+              if (!product || !matches(product)) return `<div class="sku-empty"></div>`;
+              const isUnavailable = product.sold_out || product.stock <= 0;
+              const disabled = isUnavailable ? "disabled" : "";
+              const low = product.stock <= 8 || product.sold_out ? "low" : "";
+              const stockText = isUnavailable ? "售罄" : `库存 ${product.stock}`;
+              return `
+                <button class="sku-cell ${low}" data-id="${product.id}" ${disabled}>
+                  <span>${product.note || product.flavor}</span>
+                  <strong>${stockText}</strong>
+                </button>
+              `;
+            }).join("")}
+          `).join("")}
+        </div>
+      </section>
+    `;
+  }
+
   function renderProducts() {
+    const matrixProducts = skuProducts();
+    if (matrixProducts.length) {
+      renderSkuMatrix(matrixProducts);
+      return;
+    }
+
     const query = el.searchInput.value.trim().toLowerCase();
     const visible = products.filter(product => {
       const categoryMatch = activeCategory === "全部" || product.category === activeCategory;
@@ -224,14 +296,14 @@
   function flashAddButton(button, productName) {
     if (!button) return;
     window.clearTimeout(button._feedbackTimer);
-    const originalText = button.dataset.originalText || button.textContent;
-    button.dataset.originalText = originalText;
+    const originalHtml = button.dataset.originalHtml || button.innerHTML;
+    button.dataset.originalHtml = originalHtml;
     button.textContent = "已加入";
     button.classList.add("added");
     button.disabled = true;
     POS.showToast(`已加入 ${productName}`);
     button._feedbackTimer = window.setTimeout(() => {
-      button.textContent = originalText;
+      button.innerHTML = originalHtml;
       button.classList.remove("added");
       button.disabled = false;
     }, 550);

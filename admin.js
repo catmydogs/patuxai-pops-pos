@@ -225,6 +225,14 @@
           <input class="field-input" name="category" value="${escapeAttr(product.category)}" required>
         </label>
         <label>
+          形状
+          <input class="field-input" name="shape" value="${escapeAttr(product.shape || "")}">
+        </label>
+        <label>
+          口味
+          <input class="field-input" name="flavor" value="${escapeAttr(product.flavor || "")}">
+        </label>
+        <label>
           价格 KIP
           <input class="field-input" name="price" type="number" min="0" step="1000" value="${product.price}" required>
         </label>
@@ -235,6 +243,14 @@
         <label>
           排序
           <input class="field-input" name="sort_order" type="number" step="1" value="${product.sort_order}" required>
+        </label>
+        <label>
+          形状排序
+          <input class="field-input" name="shape_order" type="number" step="1" value="${product.shape_order || 0}">
+        </label>
+        <label>
+          口味排序
+          <input class="field-input" name="flavor_order" type="number" step="1" value="${product.flavor_order || 0}">
         </label>
         <label>
           图片路径
@@ -509,9 +525,13 @@
       name: String(formData.get("name") || "").trim(),
       note: String(formData.get("note") || "").trim(),
       category: String(formData.get("category") || "").trim(),
+      shape: String(formData.get("shape") || "").trim(),
+      flavor: String(formData.get("flavor") || "").trim(),
       price: Number(formData.get("price") || 0),
       stock: Number(formData.get("stock") || 0),
       sort_order: Number(formData.get("sort_order") || 0),
+      shape_order: Number(formData.get("shape_order") || 0),
+      flavor_order: Number(formData.get("flavor_order") || 0),
       image_path: String(formData.get("image_path") || "").trim(),
       sold_out: formData.has("sold_out"),
       is_active: formData.has("is_active"),
@@ -523,7 +543,7 @@
       return;
     }
 
-    if (!Number.isFinite(payload.price) || !Number.isFinite(payload.stock) || !Number.isFinite(payload.sort_order)) {
+    if (!Number.isFinite(payload.price) || !Number.isFinite(payload.stock) || !Number.isFinite(payload.sort_order) || !Number.isFinite(payload.shape_order) || !Number.isFinite(payload.flavor_order)) {
       POS.showToast("价格、库存和排序必须是数字");
       return;
     }

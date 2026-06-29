@@ -328,6 +328,116 @@ h1 {
   gap: 16px;
 }
 
+.sku-matrix {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 14px;
+}
+
+.sku-matrix-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: end;
+}
+
+.sku-matrix-head h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.sku-matrix-head span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.sku-matrix-head strong {
+  color: var(--mint);
+  font-size: 22px;
+  white-space: nowrap;
+}
+
+.sku-table {
+  display: grid;
+  grid-template-columns: minmax(132px, 0.9fr) repeat(var(--flavor-count), minmax(145px, 1fr));
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.sku-corner,
+.sku-flavor,
+.sku-shape,
+.sku-cell,
+.sku-empty {
+  min-height: 76px;
+  border-radius: 8px;
+}
+
+.sku-corner,
+.sku-flavor,
+.sku-shape {
+  border: 1px solid var(--line);
+  background: #fff;
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  font-weight: 780;
+}
+
+.sku-corner {
+  color: var(--muted);
+}
+
+.sku-flavor {
+  justify-content: center;
+  text-align: center;
+  color: var(--mint);
+}
+
+.sku-shape {
+  color: var(--ink);
+}
+
+.sku-cell {
+  border: 1px solid rgba(22, 129, 100, 0.28);
+  background: var(--mint-soft);
+  color: var(--ink);
+  display: grid;
+  gap: 6px;
+  align-content: center;
+  justify-items: center;
+  text-align: center;
+  padding: 12px 8px;
+  font-weight: 750;
+}
+
+.sku-cell span {
+  line-height: 1.2;
+}
+
+.sku-cell strong {
+  color: var(--mint);
+  font-size: 13px;
+}
+
+.sku-cell.low {
+  border-color: rgba(217, 68, 68, 0.45);
+  background: #fff7f7;
+}
+
+.sku-cell:disabled {
+  background: #f2f4f7;
+  color: var(--muted);
+}
+
+.sku-empty {
+  border: 1px dashed var(--line);
+  background: rgba(255, 255, 255, 0.45);
+}
+
 .product {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -909,6 +1019,11 @@ th {
   .close-form,
   .admin-shortcuts {
     grid-template-columns: 1fr;
+  }
+
+  .sku-matrix-head {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .cash-presets {

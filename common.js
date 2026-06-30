@@ -303,8 +303,36 @@
     return `${Number(value || 0).toLocaleString("en-US")} KIP`;
   }
 
+  const businessTimeZone = "Asia/Vientiane";
+  const lowStockThreshold = 10;
+
+  function dateParts(date) {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: businessTimeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).formatToParts(date || new Date());
+    return Object.fromEntries(parts.map(part => [part.type, part.value]));
+  }
+
+  function dateKey(date) {
+    const parts = dateParts(date || new Date());
+    return `${parts.year}-${parts.month}-${parts.day}`;
+  }
+
   function todayKey() {
-    return new Date().toISOString().slice(0, 10);
+    return dateKey(new Date());
+  }
+
+  function todayLabel() {
+    return new Intl.DateTimeFormat("zh-CN", {
+      timeZone: businessTimeZone,
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      weekday: "long"
+    }).format(new Date());
   }
 
   function csvEscape(value) {
@@ -483,7 +511,11 @@
     productCatalog,
     getClient,
     money,
+    dateKey,
     todayKey,
+    todayLabel,
+    businessTimeZone,
+    lowStockThreshold,
     csvEscape,
     showToast,
     setSyncStatus,

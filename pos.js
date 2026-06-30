@@ -3,12 +3,17 @@
   const todayKey = POS.todayKey();
   const productsCacheKey = "patuxai-pops-products-cache";
   const pendingOrdersKey = "patuxai-pops-pending-orders";
+  const cartCacheKey = `patuxai-pops-cart-${todayKey}`;
+  const lowStockThreshold = POS.lowStockThreshold || 10;
   let products = [];
   let orders = [];
   let pendingOrders = [];
   let cart = [];
   let activeCategory = "全部";
   let payMethod = "现金";
+  let cartLoaded = false;
+  let checkoutInFlight = false;
+  let clearConfirmTimer = null;
 
   const el = {
     todayText: document.querySelector("#todayText"),
@@ -28,7 +33,8 @@
     orderCount: document.querySelector("#orderCount"),
     itemCount: document.querySelector("#itemCount"),
     topItem: document.querySelector("#topItem"),
-    ordersBody: document.querySelector("#ordersBody")
+    ordersBody: document.querySelector("#ordersBody"),
+    lowStockAlert: document.querySelector("#lowStockAlert")
   };
 
   function cartTotals() {
@@ -53,6 +59,39 @@
 
   function writeJson(key, value) {
     window.localStorage.setItem(key, JSON.stringify(value));
+  }
+
+  function saveCart() {
+    writeJson(cartCacheKey, cart);
+  }
+
+  function productLabel(product) {
+    if (product && product.shape && product.flavor) {
+      return `${product.shape} · ${product.note || product.flavor}`;
+    }
+    return product ? product.name : "";
+  }
+
+  function normalizeCart(rawCart) {
+    return (rawCart || []).map(line => {
+      const product = products.find(item => item.id === line.product_id);
+      if (!product || product.is_active === false || product.sold_out || product.stock <= 0) return null;
+      const qty = Math.min(Number(line.qty || 1), product.stock);
+      if (qty <= 0) return null;
+      return {
+        line_id: line.line_id || makeId(),
+        product_id: product.id,
+        name: productLabel(product),
+        price: product.price,
+        qty
+      };
+    }).filter(Boolean);
+  }
+
+  function loadCartOnce() {
+    if (cartLoaded) return;
+    cart = normalizeCart(readJson(cartCacheKey, []));
+    cartLoaded = true;
   }
 
   function loadPendingOrders() {
@@ -116,6 +155,7 @@
       await syncPendingOrders(true);
     }
     await loadProducts();
+    loadCartOnce();
     await loadTodayOrders();
     renderAll();
     updateSyncStatus();
@@ -204,10 +244,10 @@
   }
 
   const skuFlavorAssets = {
-    "Mango & Passion Fruit": "assets/products/mango-passion.png",
-    "Strawberry Milk": "assets/products/strawberry-milk.png",
-    "Japanese Melon": "assets/products/japanese-melon.png",
-    "Coconut + Butterfly Pea": "assets/products/coconut-butterfly-pea.png"
+    "Mango & Passion Fruit": "assets/flavors/mango-passion-bg.png",
+    "Strawberry Milk": "assets/flavors/strawberry-milk-bg.png",
+    "Japanese Melon": "assets/flavors/japanese-melon-bg.png",
+    "Coconut + Butterfly Pea": "assets/flavors/coconut-butterfly-pea-bg.png"
   };
 
   const skuShapeAssets = {
@@ -217,12 +257,31 @@
     "Frangipani Flower": "assets/shapes/shape-frangipani.png"
   };
 
+  const skuFlavorColors = {
+    "Mango & Passion Fruit": { tone: "#e59718", soft: "#fff1c8", ink: "#7a4a00" },
+    "Strawberry Milk": { tone: "#dd6f86", soft: "#ffe1e8", ink: "#7c2637" },
+    "Japanese Melon": { tone: "#6d9f4a", soft: "#e7f4d7", ink: "#31551f" },
+    "Coconut + Butterfly Pea": { tone: "#4d82b8", soft: "#deefff", ink: "#214b75" }
+  };
+
   function assetUrl(path) {
     return (window.POS_IMAGE_FALLBACKS && window.POS_IMAGE_FALLBACKS[path]) || path;
   }
 
   function imageStyle(path) {
     return path ? `style="--sku-bg: url('${assetUrl(path)}')"` : "";
+  }
+
+  function skuCellStyle(flavorName) {
+    const colors = skuFlavorColors[flavorName];
+    if (!colors) return "";
+    return `style="--sku-tone: ${colors.tone}; --sku-tone-soft: ${colors.soft}; --sku-tone-ink: ${colors.ink};"`;
+  }
+
+  function formatOrderItemName(item) {
+    const product = products.find(productItem => productItem.id === item.product_id);
+    if (product) return productLabel(product);
+    return item.name || "商品";
   }
 
   function renderCategories() {
@@ -273,10 +332,10 @@
               if (!product || !matches(product)) return `<div class="sku-empty"></div>`;
               const isUnavailable = product.sold_out || product.stock <= 0;
               const disabled = isUnavailable ? "disabled" : "";
-              const low = product.stock <= 8 || product.sold_out ? "low" : "";
+              const low = product.stock <= lowStockThreshold || product.sold_out ? "low" : "";
               const stockText = isUnavailable ? "售罄" : `库存 ${product.stock}`;
               return `
-                <button class="sku-cell ${low}" data-id="${product.id}" ${disabled}>
+                <button class="sku-cell ${low}" data-id="${product.id}" ${skuCellStyle(product.flavor)} ${disabled}>
                   <span>${product.note || product.flavor}</span>
                   <strong>${stockText}</strong>
                 </button>
@@ -305,7 +364,7 @@
     el.productGrid.innerHTML = visible.map(product => {
       const isUnavailable = product.sold_out || product.stock <= 0;
       const disabled = isUnavailable ? "disabled" : "";
-      const low = product.stock <= 8 || product.sold_out ? "low" : "";
+      const low = product.stock <= lowStockThreshold || product.sold_out ? "low" : "";
       const stockText = isUnavailable ? "售罄" : `库存 ${product.stock}`;
       return `
         <article class="product ${low}">
@@ -342,16 +401,21 @@
     if (!product || product.sold_out || product.stock <= 0) return null;
     const existing = cart.find(item => item.product_id === productId);
     if (existing) {
+      if (existing.qty >= product.stock) {
+        POS.showToast("已达到当前库存数量");
+        return null;
+      }
       existing.qty += 1;
     } else {
       cart.push({
         line_id: makeId(),
         product_id: product.id,
-        name: product.name,
+        name: productLabel(product),
         price: product.price,
         qty: 1
       });
     }
+    saveCart();
     renderCart();
     return product;
   }
@@ -387,7 +451,8 @@
     const totals = cartTotals();
     el.subtotal.textContent = POS.money(totals.subtotal);
     el.grandTotal.textContent = POS.money(totals.total);
-    el.checkoutBtn.disabled = cart.length === 0 || totals.total <= 0;
+    el.checkoutBtn.disabled = checkoutInFlight || cart.length === 0 || totals.total <= 0;
+    updateCashPresets(totals.total);
     updateChange();
   }
 
@@ -397,8 +462,43 @@
     if (action === "inc") item.qty += 1;
     if (action === "dec") item.qty -= 1;
     if (action === "remove") item.qty = 0;
+    const product = products.find(productItem => productItem.id === item.product_id);
+    if (product && item.qty > product.stock) {
+      item.qty = product.stock;
+      POS.showToast("已达到当前库存数量");
+    }
     cart = cart.filter(line => line.qty > 0);
+    saveCart();
     renderCart();
+  }
+
+  function cashLabel(value) {
+    return `${Math.round(value / 1000)}k`;
+  }
+
+  function updateCashPresets(total) {
+    if (!el.cashPresets) return;
+    if (total <= 0) {
+      el.cashPresets.innerHTML = `
+        <button class="cash-preset" data-cash="exact">刚好</button>
+        <button class="cash-preset" data-cash="100000">100k</button>
+        <button class="cash-preset" data-cash="200000">200k</button>
+        <button class="cash-preset" data-cash="500000">500k</button>
+      `;
+      return;
+    }
+
+    const values = [
+      Math.ceil(total / 50000) * 50000,
+      Math.ceil(total / 100000) * 100000,
+      200000,
+      500000
+    ].filter(value => value > total);
+    const unique = [...new Set(values)].slice(0, 3);
+    el.cashPresets.innerHTML = [
+      `<button class="cash-preset" data-cash="exact">刚好</button>`,
+      ...unique.map(value => `<button class="cash-preset" data-cash="${value}">${cashLabel(value)}</button>`)
+    ].join("");
   }
 
   function updateChange() {
@@ -412,6 +512,7 @@
   }
 
   async function checkout() {
+    if (checkoutInFlight) return;
     const totals = cartTotals();
     if (cart.length === 0) return;
     if (payMethod === "现金" && Number(el.cashInput.value || 0) < totals.total) {
@@ -419,13 +520,16 @@
       return;
     }
 
+    checkoutInFlight = true;
     const order = makeLocalOrder(totals.total);
     POS.setBusy(el.checkoutBtn, true, "提交中");
     if (!window.navigator.onLine) {
       saveOrderForLater(order);
       cart = [];
+      saveCart();
       el.cashInput.value = "";
       POS.setBusy(el.checkoutBtn, false);
+      checkoutInFlight = false;
       renderAll();
       POS.showToast("离线订单已保存");
       return;
@@ -435,6 +539,7 @@
       const result = await submitOrder(order);
       if (result.error) {
         POS.setBusy(el.checkoutBtn, false);
+        checkoutInFlight = false;
         POS.showToast(result.error.message || "订单提交失败");
         await refresh();
         return;
@@ -442,15 +547,19 @@
     } catch (error) {
       saveOrderForLater(order);
       cart = [];
+      saveCart();
       el.cashInput.value = "";
       POS.setBusy(el.checkoutBtn, false);
+      checkoutInFlight = false;
       renderAll();
       POS.showToast("订单已保存在本机");
       return;
     }
     POS.setBusy(el.checkoutBtn, false);
+    checkoutInFlight = false;
 
     cart = [];
+    saveCart();
     el.cashInput.value = "";
     POS.showToast("已完成收款");
     await refresh();
@@ -473,10 +582,10 @@
     el.salesTotal.textContent = POS.money(sales);
     el.orderCount.textContent = activeOrders.length;
     el.itemCount.textContent = count;
-    el.topItem.textContent = top ? top[0] : "暂无";
+    el.topItem.textContent = top ? formatOrderItemName({ name: top[0] }) : "暂无";
 
     el.ordersBody.innerHTML = activeOrders.length ? activeOrders.map(order => {
-      const items = order.order_items.map(item => `${item.name} x${item.qty}`).join("、");
+      const items = order.order_items.map(item => `${formatOrderItemName(item)} x${item.qty}`).join("、");
       const pending = order.status === "pending" ? " · 待同步" : "";
       return `
         <tr>
@@ -489,19 +598,36 @@
     }).join("") : `<tr><td colspan="4">今天还没有订单。</td></tr>`;
   }
 
+  function renderLowStockAlert() {
+    if (!el.lowStockAlert) return;
+    const lowProducts = products
+      .filter(product => product.stock <= lowStockThreshold || product.sold_out)
+      .sort((a, b) => a.stock - b.stock || productLabel(a).localeCompare(productLabel(b)));
+
+    if (!lowProducts.length) {
+      el.lowStockAlert.hidden = true;
+      el.lowStockAlert.innerHTML = "";
+      return;
+    }
+
+    const visible = lowProducts.slice(0, 5).map(product => {
+      const status = product.stock <= 0 || product.sold_out ? "售罄" : `剩 ${product.stock}`;
+      return `${productLabel(product)} ${status}`;
+    }).join("、");
+    const more = lowProducts.length > 5 ? `，另有 ${lowProducts.length - 5} 款` : "";
+    el.lowStockAlert.hidden = false;
+    el.lowStockAlert.innerHTML = `<strong>库存提醒</strong><span>${visible}${more}</span>`;
+  }
+
   function renderAll() {
     renderCategories();
+    renderLowStockAlert();
     renderProducts();
     renderCart();
     renderReports();
   }
 
-  el.todayText.textContent = new Date().toLocaleDateString("zh-CN", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    weekday: "long"
-  });
+  el.todayText.textContent = POS.todayLabel ? POS.todayLabel() : new Date().toLocaleDateString("zh-CN");
 
   el.categoryTabs.addEventListener("click", event => {
     const button = event.target.closest("[data-category]");
@@ -543,7 +669,23 @@
   el.cashInput.addEventListener("input", updateChange);
   el.checkoutBtn.addEventListener("click", checkout);
   el.clearCart.addEventListener("click", () => {
+    if (!cart.length) return;
+    if (!el.clearCart.classList.contains("confirm")) {
+      el.clearCart.classList.add("confirm");
+      el.clearCart.textContent = "再点清空";
+      POS.showToast("再点一次清空当前订单");
+      window.clearTimeout(clearConfirmTimer);
+      clearConfirmTimer = window.setTimeout(() => {
+        el.clearCart.classList.remove("confirm");
+        el.clearCart.textContent = "清空";
+      }, 1800);
+      return;
+    }
+    window.clearTimeout(clearConfirmTimer);
+    el.clearCart.classList.remove("confirm");
+    el.clearCart.textContent = "清空";
     cart = [];
+    saveCart();
     renderCart();
   });
 

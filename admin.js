@@ -1,7 +1,9 @@
 (function () {
   const client = POS.getClient();
   const todayKey = POS.todayKey();
+  const lowStockThreshold = POS.lowStockThreshold || 10;
   let activeRange = "today";
+  let activeProductFilter = "all";
   let products = [];
   let orders = [];
   let closeouts = [];
@@ -16,6 +18,7 @@
     productRanking: document.querySelector("#productRanking"),
     paymentSummary: document.querySelector("#paymentSummary"),
     categorySummary: document.querySelector("#categorySummary"),
+    stockOverview: document.querySelector("#stockOverview"),
     stockSummary: document.querySelector("#stockSummary"),
     inventoryMovements: document.querySelector("#inventoryMovements"),
     ordersBody: document.querySelector("#ordersBody"),
@@ -26,7 +29,8 @@
     saveCloseout: document.querySelector("#saveCloseout"),
     closeHistory: document.querySelector("#closeHistory"),
     menuEditor: document.querySelector("#menuEditor"),
-    testConnection: document.querySelector("#testConnection")
+    testConnection: document.querySelector("#testConnection"),
+    productFilters: document.querySelector("#productFilters")
   };
 
   if (el.menuEditor) {
@@ -135,6 +139,53 @@
     return products.find(product => product.id === id);
   }
 
+  function productDisplayName(product) {
+    if (product && product.shape && product.flavor) {
+      return `${product.shape} · ${product.note || product.flavor}`;
+    }
+    return product ? product.name : "";
+  }
+
+  function filteredProducts() {
+    if (activeProductFilter === "active") {
+      return products.filter(product => product.is_active !== false);
+    }
+    if (activeProductFilter === "inactive") {
+      return products.filter(product => product.is_active === false);
+    }
+    if (activeProductFilter === "low") {
+      return products.filter(product => product.stock <= lowStockThreshold || product.sold_out);
+    }
+    return products;
+  }
+
+  function renderStockOverview(visibleProducts) {
+    if (!el.stockOverview) return;
+    const activeProducts = products.filter(product => product.is_active !== false);
+    const totalStock = activeProducts.reduce((sum, product) => sum + Number(product.stock || 0), 0);
+    const lowCount = activeProducts.filter(product => product.stock <= lowStockThreshold || product.sold_out).length;
+    const soldOutCount = activeProducts.filter(product => product.sold_out || product.stock <= 0).length;
+
+    el.stockOverview.innerHTML = `
+      <div class="stock-metric">
+        <span>当前筛选</span>
+        <strong>${visibleProducts.length}</strong>
+      </div>
+      <div class="stock-metric">
+        <span>可售总库存</span>
+        <strong>${totalStock}</strong>
+      </div>
+      <div class="stock-metric ${lowCount ? "warning" : ""}">
+        <span>低库存</span>
+        <strong>${lowCount}</strong>
+      </div>
+      <div class="stock-metric ${soldOutCount ? "danger" : ""}">
+        <span>售空</span>
+        <strong>${soldOutCount}</strong>
+      </div>
+    `;
+  }
+
   function filteredOrders(includeVoid) {
     const base = includeVoid ? orders : orders.filter(order => order.status !== "void");
     if (activeRange === "all") return base;
@@ -143,7 +194,7 @@
     }
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 6);
-    const cutoffKey = cutoff.toISOString().slice(0, 10);
+    const cutoffKey = POS.dateKey ? POS.dateKey(cutoff) : cutoff.toISOString().slice(0, 10);
     return base.filter(order => order.day >= cutoffKey);
   }
 
@@ -204,12 +255,13 @@
   }
 
   function renderMenuEditor() {
-    if (!products.length) {
-      el.menuEditor.innerHTML = `<div class="empty">没有加载到产品。请刷新页面或重新登录。</div>`;
+    const visibleProducts = filteredProducts();
+    if (!visibleProducts.length) {
+      el.menuEditor.innerHTML = `<div class="empty">当前筛选下没有产品。</div>`;
       return;
     }
 
-    el.menuEditor.innerHTML = products.map(product => `
+    el.menuEditor.innerHTML = visibleProducts.map(product => `
       <form class="menu-row" data-product-form="${escapeAttr(product.id)}">
         <img class="menu-thumb" src="${escapeAttr(product.image_path)}" alt="${escapeAttr(product.name)}">
         <label>
@@ -347,7 +399,7 @@
       "7days": "近 7 天",
       all: "全部订单"
     };
-    el.rangeText.textContent = `${labels[activeRange]} · ${new Date().toLocaleDateString("zh-CN")}`;
+    el.rangeText.textContent = `${labels[activeRange]} · ${POS.todayLabel ? POS.todayLabel() : new Date().toLocaleDateString("zh-CN")}`;
     el.salesTotal.textContent = POS.money(sales);
     el.orderCount.textContent = activeOrders.length;
     el.itemCount.textContent = itemCount;
@@ -357,11 +409,34 @@
     renderBars(el.paymentSummary, paymentRows, "当前范围内还没有付款记录。");
     renderBars(el.categorySummary, categoryRows, "当前范围内还没有类别数据。");
 
-    el.stockSummary.innerHTML = products.map(product => `
-      <div class="stock-item" data-stock-row="${escapeAttr(product.id)}">
-        <div>
-          <strong>${product.name}</strong>
-          <small>${product.note} · 库存 ${product.stock} · ${product.is_active === false ? "已下架" : "上架中"}</small>
+    const visibleProducts = filteredProducts();
+    renderStockOverview(visibleProducts);
+    el.stockSummary.innerHTML = visibleProducts.length ? visibleProducts.map(product => {
+      const low = product.stock <= lowStockThreshold || product.sold_out;
+      const soldOut = product.sold_out || product.stock <= 0;
+      const stockTone = soldOut ? "danger" : low ? "warning" : "";
+      return `
+      <article class="stock-card ${low ? "low" : ""}" data-stock-row="${escapeAttr(product.id)}">
+        <div class="stock-card-main">
+          <div>
+            <strong>${escapeHtml(productDisplayName(product))}</strong>
+            <small>${escapeHtml(product.note || product.name)}${product.category ? ` · ${escapeHtml(product.category)}` : ""}</small>
+          </div>
+          <div class="stock-count ${stockTone}">
+            <span>库存</span>
+            <strong data-stock-count="${escapeAttr(product.id)}">${product.stock}</strong>
+          </div>
+        </div>
+        <div class="stock-status-row">
+          <span class="stock-pill ${product.is_active === false ? "danger" : ""}">${product.is_active === false ? "已下架" : "上架中"}</span>
+          <span class="stock-pill ${soldOut ? "danger" : low ? "warning" : ""}" data-stock-state="${escapeAttr(product.id)}">${soldOut ? "售空" : low ? "低库存" : "可售"}</span>
+        </div>
+        <div class="stock-adjust" aria-label="${escapeAttr(product.name)}快捷调库存">
+          <button class="mini-button stock-step danger" data-stock-step="${escapeAttr(product.id)}" data-step="-1">-1</button>
+          <button class="mini-button stock-step" data-stock-step="${escapeAttr(product.id)}" data-step="1">+1</button>
+          <button class="mini-button stock-step" data-stock-step="${escapeAttr(product.id)}" data-step="5">+5</button>
+          <button class="mini-button stock-step" data-stock-step="${escapeAttr(product.id)}" data-step="10">+10</button>
+          <button class="mini-button stock-step" data-stock-zero="${escapeAttr(product.id)}">归零</button>
         </div>
         <div class="stock-controls">
           <input class="field-input stock-input" data-stock-input="${escapeAttr(product.id)}" type="number" min="0" step="1" value="${product.stock}" aria-label="${escapeAttr(product.name)}库存">
@@ -380,8 +455,9 @@
           </button>
           <button class="mini-button primary" data-save-stock="${escapeAttr(product.id)}">保存库存</button>
         </div>
-      </div>
-    `).join("");
+      </article>
+    `;
+    }).join("") : `<div class="empty">当前筛选下没有产品。</div>`;
 
     const tableOrders = filteredOrders(true);
     el.ordersBody.innerHTML = tableOrders.length ? tableOrders.map(order => {
@@ -417,6 +493,67 @@
       return;
     }
     await refresh();
+  }
+
+  function stockRow(productId) {
+    return document.querySelector(`[data-stock-row="${productId}"]`);
+  }
+
+  function updateStockDraft(productId, stock, options = {}) {
+    const row = stockRow(productId);
+    const input = row && row.querySelector(`[data-stock-input="${productId}"]`);
+    const soldOut = row && row.querySelector(`[data-stock-soldout="${productId}"]`);
+    const reason = row && row.querySelector(`[data-stock-reason="${productId}"]`);
+    const note = row && row.querySelector(`[data-stock-note="${productId}"]`);
+    const count = row && row.querySelector(`[data-stock-count="${productId}"]`);
+    const state = row && row.querySelector(`[data-stock-state="${productId}"]`);
+    if (!input) return;
+
+    const nextStock = Math.max(0, Math.floor(stock));
+    input.value = nextStock;
+    row.classList.toggle("low", nextStock <= lowStockThreshold);
+    if (count) {
+      count.textContent = nextStock;
+      const countBox = count.closest(".stock-count");
+      if (countBox) {
+        countBox.classList.toggle("danger", nextStock === 0);
+        countBox.classList.toggle("warning", nextStock > 0 && nextStock <= lowStockThreshold);
+      }
+    }
+    if (state) {
+      state.textContent = nextStock === 0 ? "售空" : nextStock <= lowStockThreshold ? "低库存" : "可售";
+      state.classList.toggle("danger", nextStock === 0);
+      state.classList.toggle("warning", nextStock > 0 && nextStock <= lowStockThreshold);
+    }
+    if (soldOut) {
+      soldOut.checked = options.soldOut ?? nextStock === 0;
+    }
+    if (reason && options.reason) {
+      reason.value = options.reason;
+    }
+    if (note && options.note && !note.value.trim()) {
+      note.value = options.note;
+    }
+  }
+
+  function adjustStockDraft(productId, delta) {
+    const row = stockRow(productId);
+    const input = row && row.querySelector(`[data-stock-input="${productId}"]`);
+    if (!input) return;
+    const current = Number(input.value || 0);
+    const next = Math.max(0, current + delta);
+    updateStockDraft(productId, next, {
+      soldOut: next === 0,
+      reason: delta > 0 ? "restock" : "correction"
+    });
+  }
+
+  function zeroStockDraft(productId) {
+    updateStockDraft(productId, 0, {
+      soldOut: true,
+      reason: "correction",
+      note: "售空归零"
+    });
   }
 
   async function saveStock(productId, button) {
@@ -690,10 +827,32 @@
     render();
   });
 
+  if (el.productFilters) {
+    el.productFilters.addEventListener("click", event => {
+      const button = event.target.closest("[data-product-filter]");
+      if (!button) return;
+      activeProductFilter = button.dataset.productFilter;
+      el.productFilters.querySelectorAll("[data-product-filter]").forEach(item => {
+        item.classList.toggle("active", item === button);
+      });
+      render();
+    });
+  }
+
   document.body.addEventListener("click", event => {
     const soldOutButton = event.target.closest("[data-soldout]");
     if (soldOutButton) {
       toggleSoldOut(soldOutButton.dataset.soldout);
+      return;
+    }
+    const stockStepButton = event.target.closest("[data-stock-step]");
+    if (stockStepButton) {
+      adjustStockDraft(stockStepButton.dataset.stockStep, Number(stockStepButton.dataset.step || 0));
+      return;
+    }
+    const stockZeroButton = event.target.closest("[data-stock-zero]");
+    if (stockZeroButton) {
+      zeroStockDraft(stockZeroButton.dataset.stockZero);
       return;
     }
     const saveStockButton = event.target.closest("[data-save-stock]");
@@ -710,6 +869,22 @@
     if (voidButton) {
       voidOrder(voidButton.dataset.void);
     }
+  });
+
+  el.stockSummary.addEventListener("input", event => {
+    const input = event.target.closest("[data-stock-input]");
+    if (!input) return;
+    const stock = Number(input.value || 0);
+    if (!Number.isFinite(stock)) return;
+    updateStockDraft(input.dataset.stockInput, stock, { soldOut: stock <= 0 });
+  });
+
+  el.stockSummary.addEventListener("change", event => {
+    const soldOut = event.target.closest("[data-stock-soldout]");
+    if (!soldOut) return;
+    const input = document.querySelector(`[data-stock-input="${soldOut.dataset.stockSoldout}"]`);
+    const stock = Number(input ? input.value || 0 : 0);
+    updateStockDraft(soldOut.dataset.stockSoldout, stock, { soldOut: soldOut.checked });
   });
 
   el.actualCash.addEventListener("input", renderCloseout);

@@ -317,7 +317,10 @@
           <strong>${POS.money(55000)} / 个</strong>
         </div>
         <div class="sku-table" style="--flavor-count: ${flavors.length}">
-          <div class="sku-corner">形状</div>
+          <div class="sku-corner">
+            <span class="corner-flavor">口味选择</span>
+            <span class="corner-shape">形状选择</span>
+          </div>
           ${flavors.map(flavor => `
             <div class="sku-flavor" ${imageStyle(skuFlavorAssets[flavor.name])}>
               <span>${flavor.name}</span>

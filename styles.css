@@ -428,6 +428,33 @@ h1 {
 
 .sku-corner {
   color: var(--muted);
+  position: relative;
+  overflow: hidden;
+  min-height: 112px;
+  align-items: stretch;
+  justify-content: stretch;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0) 49.4%, var(--line) 50%, rgba(255, 255, 255, 0) 50.6%),
+    linear-gradient(135deg, #f9fbfb 0 49.6%, #fff 49.8% 100%);
+}
+
+.sku-corner span {
+  position: absolute;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.corner-flavor {
+  top: 18px;
+  right: 18px;
+  color: var(--mint);
+  text-align: right;
+}
+
+.corner-shape {
+  left: 18px;
+  bottom: 18px;
+  color: var(--muted);
 }
 
 .sku-flavor {
@@ -515,8 +542,18 @@ h1 {
 }
 
 .sku-cell {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
   border: 1px solid var(--sku-tone, rgba(22, 129, 100, 0.28));
-  background: var(--sku-tone-soft, var(--mint-soft));
+  border: 1px solid color-mix(in srgb, var(--sku-tone, #168164) 42%, #fff);
+  background:
+    radial-gradient(circle at 22% 14%, rgba(255, 255, 255, 0.9) 0 9%, rgba(255, 255, 255, 0.32) 10% 28%, transparent 42%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.78), var(--sku-tone-soft, var(--mint-soft)) 52%, var(--sku-tone-soft, var(--mint-soft)) 100%);
+  background:
+    radial-gradient(circle at 22% 14%, rgba(255, 255, 255, 0.9) 0 9%, rgba(255, 255, 255, 0.32) 10% 28%, transparent 42%),
+    radial-gradient(circle at 78% 82%, color-mix(in srgb, var(--sku-tone, #168164) 26%, transparent) 0 24%, transparent 55%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.78), color-mix(in srgb, var(--sku-tone-soft, #e7f4ef) 82%, #fff) 46%, color-mix(in srgb, var(--sku-tone, #168164) 18%, var(--sku-tone-soft, #e7f4ef)) 100%);
   color: var(--sku-tone-ink, var(--ink));
   display: grid;
   gap: 6px;
@@ -525,24 +562,91 @@ h1 {
   text-align: center;
   padding: 12px 8px;
   font-weight: 750;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.88),
+    inset 0 -12px 20px rgba(22, 129, 100, 0.1),
+    0 10px 0 rgba(31, 45, 61, 0.08),
+    0 16px 26px rgba(31, 45, 61, 0.12);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.88),
+    inset 0 -12px 20px color-mix(in srgb, var(--sku-tone, #168164) 18%, transparent),
+    0 10px 0 color-mix(in srgb, var(--sku-tone, #168164) 20%, #d9e2e4),
+    0 16px 26px rgba(31, 45, 61, 0.12);
+  transform: translateY(0);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+}
+
+.sku-cell::before,
+.sku-cell::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.sku-cell::before {
+  inset: 8px 10px auto 10px;
+  height: 34%;
+  border-radius: 999px 999px 44px 44px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.18));
+  filter: blur(0.2px);
+}
+
+.sku-cell::after {
+  inset: auto 12px 8px 12px;
+  height: 28%;
+  border-radius: 999px;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.24), transparent 72%);
 }
 
 .sku-cell span {
+  position: relative;
+  z-index: 1;
   line-height: 1.2;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.68);
 }
 
 .sku-cell strong {
+  position: relative;
+  z-index: 1;
   color: var(--sku-tone, var(--mint));
   font-size: 13px;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
 .sku-cell.low {
   border-style: dashed;
-  box-shadow: inset 0 0 0 1px rgba(217, 68, 68, 0.2);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.88),
+    inset 0 0 0 1px rgba(217, 68, 68, 0.2),
+    inset 0 -12px 20px rgba(22, 129, 100, 0.08),
+    0 8px 0 rgba(31, 45, 61, 0.07),
+    0 14px 24px rgba(31, 45, 61, 0.1);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.88),
+    inset 0 0 0 1px rgba(217, 68, 68, 0.2),
+    inset 0 -12px 20px color-mix(in srgb, var(--sku-tone, #168164) 14%, transparent),
+    0 8px 0 color-mix(in srgb, var(--sku-tone, #168164) 16%, #d9e2e4),
+    0 14px 24px rgba(31, 45, 61, 0.1);
+}
+
+.sku-cell:not(:disabled):active {
+  transform: translateY(5px);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.84),
+    inset 0 -8px 16px rgba(22, 129, 100, 0.1),
+    0 4px 0 rgba(31, 45, 61, 0.08),
+    0 8px 18px rgba(31, 45, 61, 0.1);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.84),
+    inset 0 -8px 16px color-mix(in srgb, var(--sku-tone, #168164) 18%, transparent),
+    0 4px 0 color-mix(in srgb, var(--sku-tone, #168164) 22%, #d9e2e4),
+    0 8px 18px rgba(31, 45, 61, 0.1);
 }
 
 .sku-cell:disabled {
   color: var(--sku-tone-ink, var(--muted));
+  filter: saturate(0.72) opacity(0.86);
 }
 
 .sku-empty {

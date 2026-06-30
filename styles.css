@@ -475,12 +475,16 @@ h1 {
   min-height: 112px;
   align-items: flex-end;
   color: #0d6d59;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.42)),
+    var(--sku-bg, none) center 58% / cover no-repeat,
+    #fff;
 }
 
 .sku-flavor::before {
   background-size: cover;
-  background-position: center;
-  opacity: 0.88;
+  background-position: center 58%;
+  opacity: 1;
 }
 
 .sku-shape {
@@ -504,6 +508,10 @@ h1 {
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.78);
   box-shadow: 0 6px 16px rgba(31, 45, 61, 0.07);
+}
+
+.sku-flavor span {
+  background: rgba(255, 255, 255, 0.86);
 }
 
 .sku-cell {

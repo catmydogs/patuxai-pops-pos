@@ -2,8 +2,9 @@
   const client = POS.getClient();
   const todayKey = POS.todayKey();
   const lowStockThreshold = POS.lowStockThreshold || 10;
+  const currentProductIds = new Set(POS.productCatalog.map(product => product.id));
   let activeRange = "today";
-  let activeProductFilter = "all";
+  let activeProductFilter = "active";
   let products = [];
   let orders = [];
   let closeouts = [];
@@ -147,16 +148,17 @@
   }
 
   function filteredProducts() {
+    const currentProducts = products.filter(product => currentProductIds.has(product.id));
     if (activeProductFilter === "active") {
-      return products.filter(product => product.is_active !== false);
+      return currentProducts.filter(product => product.is_active !== false);
     }
     if (activeProductFilter === "inactive") {
-      return products.filter(product => product.is_active === false);
+      return currentProducts.filter(product => product.is_active === false);
     }
     if (activeProductFilter === "low") {
-      return products.filter(product => product.stock <= lowStockThreshold || product.sold_out);
+      return currentProducts.filter(product => product.stock <= lowStockThreshold || product.sold_out);
     }
-    return products;
+    return currentProducts;
   }
 
   function renderStockOverview(visibleProducts) {

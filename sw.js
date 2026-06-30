@@ -1,4 +1,4 @@
-const CACHE_NAME = "patuxai-pops-pos-20260630-stock-cards";
+const CACHE_NAME = "patuxai-pops-pos-20260630-current-menu-only";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -12,15 +12,6 @@ const APP_SHELL = [
   "./assets/icons/app-icon-180.png",
   "./assets/icons/app-icon-192.png",
   "./assets/icons/app-icon-512.png",
-  "./assets/products/mango-passion.png",
-  "./assets/products/strawberry-milk.png",
-  "./assets/products/pistachio.png",
-  "./assets/products/coconut-butterfly-pea.png",
-  "./assets/products/japanese-melon.png",
-  "./assets/products/lychee-rose-soda.png",
-  "./assets/products/patuxai-sunset-soda.png",
-  "./assets/products/peach-jasmine-sparkle.png",
-  "./assets/products/grapefruit-sparkle.png",
   "./assets/flavors/mango-passion-bg.png",
   "./assets/flavors/strawberry-milk-bg.png",
   "./assets/flavors/japanese-melon-bg.png",

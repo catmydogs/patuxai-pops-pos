@@ -265,7 +265,10 @@
   };
 
   function assetUrl(path) {
-    return (window.POS_IMAGE_FALLBACKS && window.POS_IMAGE_FALLBACKS[path]) || path;
+    if (window.POS_IMAGE_FALLBACKS && window.POS_IMAGE_FALLBACKS[path]) return window.POS_IMAGE_FALLBACKS[path];
+    if (!path || path.startsWith("data:") || /^https?:\/\//i.test(path)) return path;
+    const separator = path.includes("?") ? "&" : "?";
+    return `${path}${separator}v=${POS.appVersion || Date.now()}`;
   }
 
   function imageStyle(path) {

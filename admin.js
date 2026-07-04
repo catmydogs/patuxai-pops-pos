@@ -28,6 +28,8 @@
     otherSales: document.querySelector("#otherSales"),
     orderCount: document.querySelector("#orderCount"),
     itemCount: document.querySelector("#itemCount"),
+    iceCreamItemCount: document.querySelector("#iceCreamItemCount"),
+    otherItemCount: document.querySelector("#otherItemCount"),
     avgOrder: document.querySelector("#avgOrder"),
     productRanking: document.querySelector("#productRanking"),
     otherProductRanking: document.querySelector("#otherProductRanking"),
@@ -423,6 +425,8 @@
     }, 0);
     let iceCreamSales = 0;
     let otherSales = 0;
+    let iceCreamItemCount = 0;
+    let otherItemCount = 0;
 
     const productMap = new Map();
     const iceCreamProductMap = new Map();
@@ -437,9 +441,11 @@
         const amount = item.price * item.qty;
         if (isIceCreamItem(item, product)) {
           iceCreamSales += amount;
+          iceCreamItemCount += item.qty;
           addToMap(iceCreamProductMap, item.name, item.qty, amount);
         } else {
           otherSales += amount;
+          otherItemCount += item.qty;
           addToMap(otherProductMap, item.name, item.qty, amount);
         }
         addToMap(productMap, item.name, item.qty, amount);
@@ -474,6 +480,8 @@
     if (el.otherSales) el.otherSales.textContent = POS.money(otherSales);
     el.orderCount.textContent = activeOrders.length;
     el.itemCount.textContent = itemCount;
+    if (el.iceCreamItemCount) el.iceCreamItemCount.textContent = iceCreamItemCount;
+    if (el.otherItemCount) el.otherItemCount.textContent = otherItemCount;
     el.avgOrder.textContent = POS.money(activeOrders.length ? Math.round(sales / activeOrders.length) : 0);
 
     renderBars(el.productRanking, iceCreamRows, "当前范围内还没有冰淇淋销售。");

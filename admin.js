@@ -24,10 +24,13 @@
   const el = {
     rangeText: document.querySelector("#rangeText"),
     salesTotal: document.querySelector("#salesTotal"),
+    iceCreamSales: document.querySelector("#iceCreamSales"),
+    otherSales: document.querySelector("#otherSales"),
     orderCount: document.querySelector("#orderCount"),
     itemCount: document.querySelector("#itemCount"),
     avgOrder: document.querySelector("#avgOrder"),
     productRanking: document.querySelector("#productRanking"),
+    otherProductRanking: document.querySelector("#otherProductRanking"),
     paymentSummary: document.querySelector("#paymentSummary"),
     categorySummary: document.querySelector("#categorySummary"),
     stockOverview: document.querySelector("#stockOverview"),
@@ -41,6 +44,7 @@
     saveCloseout: document.querySelector("#saveCloseout"),
     closeHistory: document.querySelector("#closeHistory"),
     menuEditor: document.querySelector("#menuEditor"),
+    addProductForm: document.querySelector("#addProductForm"),
     testConnection: document.querySelector("#testConnection"),
     productFilters: document.querySelector("#productFilters")
   };
@@ -158,8 +162,35 @@
     return product ? product.name : "";
   }
 
+  function isCurrentMenuProduct(product) {
+    return product && product.is_deleted !== true && (currentProductIds.has(product.id) || !legacyProductIds.has(product.id));
+  }
+
+  function isIceCreamItem(item, product) {
+    const legacyIceCreamIds = new Set([
+      "mango-passion",
+      "strawberry-milk",
+      "pistachio",
+      "coconut-butterfly-pea",
+      "japanese-melon"
+    ]);
+    return currentProductIds.has(item.product_id) ||
+      legacyIceCreamIds.has(item.product_id) ||
+      Boolean(product && product.shape && product.flavor);
+  }
+
+  function makeProductId(name, category) {
+    const prefix = category === "定制服务" ? "custom" : category === "周边产品" ? "merch" : "product";
+    const suffix = String(name || "item")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 24);
+    return `${prefix}-${suffix || Date.now().toString(36)}-${Date.now().toString(36)}`;
+  }
+
   function filteredProducts() {
-    const currentProducts = products.filter(product => currentProductIds.has(product.id) || !legacyProductIds.has(product.id));
+    const currentProducts = products.filter(isCurrentMenuProduct);
     if (activeProductFilter === "active") {
       return currentProducts.filter(product => product.is_active !== false);
     }
@@ -174,7 +205,7 @@
 
   function renderStockOverview(visibleProducts) {
     if (!el.stockOverview) return;
-    const activeProducts = products.filter(product => product.is_active !== false);
+    const activeProducts = products.filter(product => isCurrentMenuProduct(product) && product.is_active !== false);
     const totalStock = activeProducts.reduce((sum, product) => sum + Number(product.stock || 0), 0);
     const lowCount = activeProducts.filter(product => product.stock <= lowStockThreshold || product.sold_out).length;
     const soldOutCount = activeProducts.filter(product => product.sold_out || product.stock <= 0).length;
@@ -274,9 +305,15 @@
       return;
     }
 
-    el.menuEditor.innerHTML = visibleProducts.map(product => `
+    el.menuEditor.innerHTML = visibleProducts.map(product => {
+      const isMatrixProduct = currentProductIds.has(product.id);
+      return `
       <form class="menu-row" data-product-form="${escapeAttr(product.id)}">
         <img class="menu-thumb" src="${escapeAttr(product.image_path)}" alt="${escapeAttr(product.name)}">
+        <div class="menu-row-title">
+          <strong>${escapeHtml(isMatrixProduct ? "冰淇淋 SKU" : "普通产品")}</strong>
+          <small>${escapeHtml(product.id)}</small>
+        </div>
         <label>
           产品名
           <input class="field-input" name="name" value="${escapeAttr(product.name)}" required>
@@ -291,11 +328,11 @@
         </label>
         <label>
           形状
-          <input class="field-input" name="shape" value="${escapeAttr(product.shape || "")}">
+          <input class="field-input" name="shape" value="${escapeAttr(product.shape || "")}" ${isMatrixProduct ? "readonly" : ""}>
         </label>
         <label>
           口味
-          <input class="field-input" name="flavor" value="${escapeAttr(product.flavor || "")}">
+          <input class="field-input" name="flavor" value="${escapeAttr(product.flavor || "")}" ${isMatrixProduct ? "readonly" : ""}>
         </label>
         <label>
           价格 KIP
@@ -311,11 +348,11 @@
         </label>
         <label>
           形状排序
-          <input class="field-input" name="shape_order" type="number" step="1" value="${product.shape_order || 0}">
+          <input class="field-input" name="shape_order" type="number" step="1" value="${product.shape_order || 0}" ${isMatrixProduct ? "readonly" : ""}>
         </label>
         <label>
           口味排序
-          <input class="field-input" name="flavor_order" type="number" step="1" value="${product.flavor_order || 0}">
+          <input class="field-input" name="flavor_order" type="number" step="1" value="${product.flavor_order || 0}" ${isMatrixProduct ? "readonly" : ""}>
         </label>
         <label>
           图片路径
@@ -335,8 +372,10 @@
           前台显示
         </label>
         <button class="button primary" type="submit">保存</button>
+        ${isMatrixProduct ? "" : `<button class="button danger" type="button" data-delete-product="${escapeAttr(product.id)}">删除</button>`}
       </form>
-    `).join("");
+    `;
+    }).join("");
   }
 
   function reasonText(reason) {
@@ -382,8 +421,12 @@
     const itemCount = activeOrders.reduce((sum, order) => {
       return sum + order.order_items.reduce((part, item) => part + item.qty, 0);
     }, 0);
+    let iceCreamSales = 0;
+    let otherSales = 0;
 
     const productMap = new Map();
+    const iceCreamProductMap = new Map();
+    const otherProductMap = new Map();
     const paymentMap = new Map();
     const categoryMap = new Map();
 
@@ -392,12 +435,25 @@
       order.order_items.forEach(item => {
         const product = productById(item.product_id);
         const amount = item.price * item.qty;
+        if (isIceCreamItem(item, product)) {
+          iceCreamSales += amount;
+          addToMap(iceCreamProductMap, item.name, item.qty, amount);
+        } else {
+          otherSales += amount;
+          addToMap(otherProductMap, item.name, item.qty, amount);
+        }
         addToMap(productMap, item.name, item.qty, amount);
         addToMap(categoryMap, product ? product.category : "其他", item.qty, amount);
       });
     });
 
     const productRows = [...productMap.entries()]
+      .map(([name, data]) => ({ name, ...data }))
+      .sort((a, b) => b.amount - a.amount);
+    const iceCreamRows = [...iceCreamProductMap.entries()]
+      .map(([name, data]) => ({ name, ...data }))
+      .sort((a, b) => b.amount - a.amount);
+    const otherProductRows = [...otherProductMap.entries()]
       .map(([name, data]) => ({ name, ...data }))
       .sort((a, b) => b.amount - a.amount);
     const paymentRows = [...paymentMap.entries()]
@@ -414,11 +470,14 @@
     };
     el.rangeText.textContent = `${labels[activeRange]} · ${POS.todayLabel ? POS.todayLabel() : new Date().toLocaleDateString("zh-CN")}`;
     el.salesTotal.textContent = POS.money(sales);
+    if (el.iceCreamSales) el.iceCreamSales.textContent = POS.money(iceCreamSales);
+    if (el.otherSales) el.otherSales.textContent = POS.money(otherSales);
     el.orderCount.textContent = activeOrders.length;
     el.itemCount.textContent = itemCount;
     el.avgOrder.textContent = POS.money(activeOrders.length ? Math.round(sales / activeOrders.length) : 0);
 
-    renderBars(el.productRanking, productRows, "当前范围内还没有销售。");
+    renderBars(el.productRanking, iceCreamRows, "当前范围内还没有冰淇淋销售。");
+    if (el.otherProductRanking) renderBars(el.otherProductRanking, otherProductRows, "当前范围内还没有定制服务或周边销售。");
     renderBars(el.paymentSummary, paymentRows, "当前范围内还没有付款记录。");
     renderBars(el.categorySummary, categoryRows, "当前范围内还没有类别数据。");
 
@@ -685,6 +744,7 @@
       image_path: String(formData.get("image_path") || "").trim(),
       sold_out: formData.has("sold_out"),
       is_active: formData.has("is_active"),
+      is_deleted: false,
       updated_at: new Date().toISOString()
     };
 
@@ -734,6 +794,96 @@
     }
 
     POS.showToast("菜单已更新");
+    await refresh();
+  }
+
+  async function addProduct(form) {
+    if (!window.navigator.onLine) {
+      POS.showToast("当前离线，新增产品需要联网保存");
+      return;
+    }
+
+    const formData = new FormData(form);
+    const name = String(formData.get("name") || "").trim();
+    const category = String(formData.get("category") || "").trim();
+    const price = Number(formData.get("price") || 0);
+    const stock = Number(formData.get("stock") || 0);
+    const note = String(formData.get("note") || "").trim();
+
+    if (!name || !category) {
+      POS.showToast("产品名称和分类不能为空");
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0 || !Number.isFinite(stock) || stock < 0) {
+      POS.showToast("价格和库存必须是 0 或更大的数字");
+      return;
+    }
+
+    const button = form.querySelector("button[type='submit']");
+    const payload = {
+      id: makeProductId(name, category),
+      name,
+      category,
+      shape: "",
+      flavor: "",
+      shape_order: 0,
+      flavor_order: 0,
+      price: Math.floor(price),
+      stock: Math.floor(stock),
+      sold_out: Math.floor(stock) <= 0,
+      is_active: true,
+      is_deleted: false,
+      image_path: "assets/icons/app-icon-512.png",
+      note,
+      sort_order: category === "定制服务" ? 100 + products.length : 200 + products.length,
+      updated_at: new Date().toISOString()
+    };
+
+    POS.setBusy(button, true, "新增中");
+    const result = await client.from("products").upsert(payload);
+    POS.setBusy(button, false);
+
+    if (result.error) {
+      POS.showToast(result.error.message && result.error.message.includes("is_deleted") ? "需要先执行产品管理数据库升级" : result.error.message || "新增失败");
+      return;
+    }
+
+    form.reset();
+    form.querySelector("[name='stock']").value = "0";
+    POS.showToast("产品已新增");
+    await refresh();
+  }
+
+  async function deleteProduct(productId, button) {
+    const product = products.find(item => item.id === productId);
+    if (!product) return;
+    if (currentProductIds.has(productId)) {
+      POS.showToast("冰淇淋矩阵产品不能删除，只能下架或售罄");
+      return;
+    }
+
+    const confirmed = window.confirm(`确认删除「${product.name}」？历史销售记录会保留。`);
+    if (!confirmed) return;
+
+    POS.setBusy(button, true, "删除中");
+    const result = await client
+      .from("products")
+      .update({
+        is_deleted: true,
+        is_active: false,
+        sold_out: true,
+        stock: 0,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", productId);
+    POS.setBusy(button, false);
+
+    if (result.error) {
+      POS.showToast(result.error.message && result.error.message.includes("is_deleted") ? "需要先执行产品管理数据库升级" : result.error.message || "删除失败");
+      return;
+    }
+
+    POS.showToast("产品已从当前菜单删除");
     await refresh();
   }
 
@@ -878,6 +1028,11 @@
       toggleActive(activeButton.dataset.toggleActive, activeButton);
       return;
     }
+    const deleteProductButton = event.target.closest("[data-delete-product]");
+    if (deleteProductButton) {
+      deleteProduct(deleteProductButton.dataset.deleteProduct, deleteProductButton);
+      return;
+    }
     const voidButton = event.target.closest("[data-void]");
     if (voidButton) {
       voidOrder(voidButton.dataset.void);
@@ -904,6 +1059,12 @@
   el.saveCloseout.addEventListener("click", saveCloseout);
   el.exportCsv.addEventListener("click", exportCsv);
   if (el.testConnection) el.testConnection.addEventListener("click", testConnection);
+  if (el.addProductForm) {
+    el.addProductForm.addEventListener("submit", event => {
+      event.preventDefault();
+      addProduct(event.target);
+    });
+  }
   el.menuEditor.addEventListener("submit", event => {
     event.preventDefault();
     saveProduct(event.target);

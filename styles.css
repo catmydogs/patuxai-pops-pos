@@ -1205,15 +1205,48 @@ aside {
   padding: 14px 16px 16px;
 }
 
+.add-product-form {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 14px 16px 16px;
+  border-bottom: 1px solid var(--line);
+  background: #f8fafb;
+}
+
+.add-product-form label {
+  color: var(--muted);
+  font-size: 13px;
+  display: grid;
+  gap: 6px;
+}
+
 .menu-row {
   display: grid;
-  grid-template-columns: 72px repeat(5, minmax(112px, 1fr));
+  grid-template-columns: 72px 150px repeat(4, minmax(112px, 1fr));
   gap: 10px;
   align-items: end;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f8fafb;
+}
+
+.menu-row-title {
+  min-height: 72px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+}
+
+.menu-row-title strong {
+  font-size: 14px;
+}
+
+.menu-row-title small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .menu-row label {
@@ -1360,6 +1393,10 @@ th {
     grid-template-columns: 72px repeat(2, minmax(0, 1fr));
   }
 
+  .add-product-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .stock-overview {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1421,6 +1458,10 @@ th {
   }
 
   .menu-row {
+    grid-template-columns: 1fr;
+  }
+
+  .add-product-form {
     grid-template-columns: 1fr;
   }
 

@@ -11,7 +11,7 @@
   <title>Patuxai Pops 后台统计</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260704-services-merch">
+  <link rel="stylesheet" href="styles.css?v=20260704-product-management">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -71,6 +71,8 @@
 
     <section class="stats" aria-label="汇总">
       <div class="card"><span>销售额</span><strong id="salesTotal">0 KIP</strong></div>
+      <div class="card"><span>冰淇淋销售</span><strong id="iceCreamSales">0 KIP</strong></div>
+      <div class="card"><span>其他产品销售</span><strong id="otherSales">0 KIP</strong></div>
       <div class="card"><span>订单数</span><strong id="orderCount">0</strong></div>
       <div class="card"><span>售出数量</span><strong id="itemCount">0</strong></div>
       <div class="card"><span>客单价</span><strong id="avgOrder">0 KIP</strong></div>
@@ -98,13 +100,44 @@
 
     <section class="panel anchor-panel" id="menuManagement">
       <h2>菜单管理</h2>
+      <form class="add-product-form" id="addProductForm">
+        <label>
+          产品名称
+          <input class="field-input" name="name" required placeholder="例如：定制冰棒服务">
+        </label>
+        <label>
+          分类
+          <select class="field-input" name="category" required>
+            <option value="定制服务">定制服务</option>
+            <option value="周边产品">周边产品</option>
+            <option value="其他产品">其他产品</option>
+          </select>
+        </label>
+        <label>
+          价格 KIP
+          <input class="field-input" name="price" type="number" min="0" step="1000" required placeholder="55000">
+        </label>
+        <label>
+          初始库存
+          <input class="field-input" name="stock" type="number" min="0" step="1" value="0" required>
+        </label>
+        <label>
+          说明
+          <input class="field-input" name="note" placeholder="可选">
+        </label>
+        <button class="button primary" type="submit">新增产品</button>
+      </form>
       <div class="menu-editor" id="menuEditor"></div>
     </section>
 
     <section class="dashboard">
       <div class="panel">
-        <h2>产品排行</h2>
+        <h2>冰淇淋排行</h2>
         <div class="list" id="productRanking"></div>
+      </div>
+      <div class="panel">
+        <h2>定制与周边排行</h2>
+        <div class="list" id="otherProductRanking"></div>
       </div>
       <div class="panel">
         <h2>支付方式</h2>
@@ -146,8 +179,8 @@
   </main>
 
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260704-services-merch"></script>
-  <script src="common.js?v=20260704-services-merch"></script>
-  <script src="admin.js?v=20260704-services-merch"></script>
+  <script src="config.js?v=20260704-product-management"></script>
+  <script src="common.js?v=20260704-product-management"></script>
+  <script src="admin.js?v=20260704-product-management"></script>
 </body>
 </html>

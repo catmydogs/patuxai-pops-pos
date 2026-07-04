@@ -230,6 +230,10 @@
     return products.filter(product => product.shape && product.flavor);
   }
 
+  function extraProducts() {
+    return products.filter(product => !product.shape || !product.flavor);
+  }
+
   function orderedUnique(items, key, orderKey) {
     const map = new Map();
     items.forEach(item => {
@@ -301,7 +305,50 @@
     }).join("");
   }
 
-  function renderSkuMatrix(matrixProducts) {
+  function productCard(product) {
+    const isUnavailable = product.sold_out || product.stock <= 0;
+    const disabled = isUnavailable ? "disabled" : "";
+    const low = product.stock <= lowStockThreshold || product.sold_out ? "low" : "";
+    const stockText = isUnavailable ? "售罄" : `库存 ${product.stock}`;
+    const image = product.image_path ? `<img class="product-image" src="${assetUrl(product.image_path)}" alt="${product.name}">` : "";
+    return `
+      <article class="product ${low}">
+        ${image}
+        <div class="product-body">
+          <h2>${product.name}</h2>
+          <div class="meta"><span>${product.note || product.category}</span><span>${stockText}</span></div>
+          <div class="price">${POS.money(product.price)}</div>
+          <button class="add" data-id="${product.id}" ${disabled}>${isUnavailable ? "已售罄" : "加入订单"}</button>
+        </div>
+      </article>
+    `;
+  }
+
+  function renderExtraProducts(items) {
+    const query = el.searchInput.value.trim().toLowerCase();
+    const visible = items.filter(product => {
+      return !query || `${product.name}${product.category}${product.note}`.toLowerCase().includes(query);
+    });
+    if (!visible.length) return "";
+
+    const groups = [...new Set(visible.map(product => product.category || "其他"))];
+    return groups.map(category => {
+      const categoryProducts = visible.filter(product => (product.category || "其他") === category);
+      return `
+        <section class="extra-products" aria-label="${category}">
+          <div class="section-head">
+            <h2>${category}</h2>
+            <span>${categoryProducts.length} 款</span>
+          </div>
+          <div class="extra-grid">
+            ${categoryProducts.map(productCard).join("")}
+          </div>
+        </section>
+      `;
+    }).join("");
+  }
+
+  function skuMatrixHtml(matrixProducts) {
     const query = el.searchInput.value.trim().toLowerCase();
     const shapes = orderedUnique(matrixProducts, "shape", "shape_order");
     const flavors = orderedUnique(matrixProducts, "flavor", "flavor_order");
@@ -310,7 +357,7 @@
       return `${product.name}${product.shape}${product.flavor}${product.note}`.toLowerCase().includes(query);
     };
 
-    el.productGrid.innerHTML = `
+    return `
       <section class="sku-matrix" aria-label="形状口味矩阵">
         <div class="sku-matrix-head">
           <div>
@@ -355,8 +402,9 @@
 
   function renderProducts() {
     const matrixProducts = skuProducts();
+    const addOns = extraProducts();
     if (matrixProducts.length) {
-      renderSkuMatrix(matrixProducts);
+      el.productGrid.innerHTML = `${skuMatrixHtml(matrixProducts)}${renderExtraProducts(addOns)}`;
       return;
     }
 
@@ -367,23 +415,7 @@
       return categoryMatch && queryMatch;
     });
 
-    el.productGrid.innerHTML = visible.map(product => {
-      const isUnavailable = product.sold_out || product.stock <= 0;
-      const disabled = isUnavailable ? "disabled" : "";
-      const low = product.stock <= lowStockThreshold || product.sold_out ? "low" : "";
-      const stockText = isUnavailable ? "售罄" : `库存 ${product.stock}`;
-      return `
-        <article class="product ${low}">
-          <img class="product-image" src="${product.image_path}" alt="${product.name}">
-          <div class="product-body">
-            <h2>${product.name}</h2>
-            <div class="meta"><span>${product.note}</span><span>${stockText}</span></div>
-            <div class="price">${POS.money(product.price)}</div>
-            <button class="add" data-id="${product.id}" ${disabled}>${isUnavailable ? "已售罄" : "加入订单"}</button>
-          </div>
-        </article>
-      `;
-    }).join("");
+    el.productGrid.innerHTML = visible.map(productCard).join("");
   }
 
   function flashAddButton(button, productName) {

@@ -654,6 +654,37 @@ h1 {
   background: rgba(255, 255, 255, 0.45);
 }
 
+.extra-products {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.section-head h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.section-head span {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.extra-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
 .product {
   background: var(--panel);
   border: 1px solid var(--line);

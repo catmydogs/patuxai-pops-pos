@@ -3,6 +3,17 @@
   const todayKey = POS.todayKey();
   const lowStockThreshold = POS.lowStockThreshold || 10;
   const currentProductIds = new Set(POS.productCatalog.map(product => product.id));
+  const legacyProductIds = new Set([
+    "mango-passion",
+    "strawberry-milk",
+    "pistachio",
+    "coconut-butterfly-pea",
+    "japanese-melon",
+    "lychee-rose-soda",
+    "patuxai-sunset-soda",
+    "peach-jasmine-sparkle",
+    "grapefruit-sparkle"
+  ]);
   let activeRange = "today";
   let activeProductFilter = "active";
   let products = [];
@@ -148,7 +159,7 @@
   }
 
   function filteredProducts() {
-    const currentProducts = products.filter(product => currentProductIds.has(product.id));
+    const currentProducts = products.filter(product => currentProductIds.has(product.id) || !legacyProductIds.has(product.id));
     if (activeProductFilter === "active") {
       return currentProducts.filter(product => product.is_active !== false);
     }

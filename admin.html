@@ -11,7 +11,7 @@
   <title>Patuxai Pops 后台统计</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260704-split-quantity-stats">
+  <link rel="stylesheet" href="styles.css?v=20260704-pos-business-stats">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -43,7 +43,9 @@
         <a class="button" href="index.html">返回点单</a>
         <a class="button primary" href="#menuManagement">菜单管理</a>
         <button class="button" id="testConnection" type="button">测试连接</button>
-        <button class="button primary" id="exportCsv">导出 CSV</button>
+        <button class="button primary" id="exportOrdersCsv">导出订单 CSV</button>
+        <button class="button" id="exportItemsCsv">导出明细 CSV</button>
+        <button class="button" id="exportInventoryCsv">导出库存 CSV</button>
         <button class="button" id="logoutBtn">退出</button>
       </div>
     </section>
@@ -70,14 +72,19 @@
     </nav>
 
     <section class="stats" aria-label="汇总">
-      <div class="card"><span>销售额</span><strong id="salesTotal">0 KIP</strong></div>
-      <div class="card"><span>冰淇淋销售</span><strong id="iceCreamSales">0 KIP</strong></div>
-      <div class="card"><span>其他产品销售</span><strong id="otherSales">0 KIP</strong></div>
-      <div class="card"><span>订单数</span><strong id="orderCount">0</strong></div>
-      <div class="card"><span>售出数量</span><strong id="itemCount">0</strong></div>
-      <div class="card"><span>冰淇淋数量</span><strong id="iceCreamItemCount">0</strong></div>
-      <div class="card"><span>其他产品数量</span><strong id="otherItemCount">0</strong></div>
+      <div class="card"><span>今日销售额</span><strong id="salesTotal">0 KIP</strong></div>
+      <div class="card"><span>今日订单数</span><strong id="orderCount">0</strong></div>
       <div class="card"><span>客单价</span><strong id="avgOrder">0 KIP</strong></div>
+      <div class="card"><span>总售出数量</span><strong id="itemCount">0</strong></div>
+      <div class="card"><span>冰淇淋数量</span><strong id="iceCreamItemCount">0</strong></div>
+      <div class="card"><span>定制服务数量</span><strong id="customItemCount">0</strong></div>
+      <div class="card"><span>周边产品数量</span><strong id="merchItemCount">0</strong></div>
+      <div class="card"><span>饮品数量</span><strong id="drinkItemCount">0</strong></div>
+      <div class="card"><span>其他产品数量</span><strong id="otherItemCount">0</strong></div>
+      <div class="card"><span>现金销售</span><strong id="cashSales">0 KIP</strong></div>
+      <div class="card"><span>扫码销售</span><strong id="qrSales">0 KIP</strong></div>
+      <div class="card"><span>现金差额</span><strong id="cashDifference">0 KIP</strong></div>
+      <div class="card"><span>低库存 SKU</span><strong id="lowStockSkuCount">0</strong></div>
     </section>
 
     <section class="panel anchor-panel" id="closeoutPanel">
@@ -110,18 +117,24 @@
         <label>
           分类
           <select class="field-input" name="category" required>
-            <option value="定制服务">定制服务</option>
-            <option value="周边产品">周边产品</option>
-            <option value="其他产品">其他产品</option>
+            <option value="custom">定制服务</option>
+            <option value="merch">周边产品</option>
+            <option value="drink">饮品</option>
+            <option value="bundle">套餐</option>
+            <option value="other">其他产品</option>
           </select>
         </label>
         <label>
-          价格 KIP
+          售价 KIP
           <input class="field-input" name="price" type="number" min="0" step="1000" required placeholder="55000">
         </label>
         <label>
           初始库存
           <input class="field-input" name="stock" type="number" min="0" step="1" value="0" required>
+        </label>
+        <label>
+          低库存提醒
+          <input class="field-input" name="low_stock_threshold" type="number" min="0" step="1" value="10" required>
         </label>
         <label>
           说明
@@ -180,9 +193,10 @@
     </section>
   </main>
 
+  <button class="back-top" id="backTop" type="button" aria-label="返回顶部">↑ 顶部</button>
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260704-split-quantity-stats"></script>
-  <script src="common.js?v=20260704-split-quantity-stats"></script>
-  <script src="admin.js?v=20260704-split-quantity-stats"></script>
+  <script src="config.js?v=20260704-pos-business-stats"></script>
+  <script src="common.js?v=20260704-pos-business-stats"></script>
+  <script src="admin.js?v=20260704-pos-business-stats"></script>
 </body>
 </html>

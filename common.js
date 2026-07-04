@@ -1,5 +1,5 @@
 (function () {
-  const appVersion = "20260704-split-quantity-stats";
+  const appVersion = "20260704-pos-business-stats";
   const productCatalog = [
     { id: "patuxai-mango-passion", name: "Patuxai - Mango & Passion Fruit", category: "Patuxai Pops", shape: "Patuxai", flavor: "Mango & Passion Fruit", shape_order: 1, flavor_order: 1, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/shapes/shape-patuxai.png", note: "芒果百香果", sort_order: 1 },
     { id: "patuxai-strawberry-milk", name: "Patuxai - Strawberry Milk", category: "Patuxai Pops", shape: "Patuxai", flavor: "Strawberry Milk", shape_order: 1, flavor_order: 2, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/shapes/shape-patuxai.png", note: "草莓牛奶", sort_order: 2 },
@@ -304,6 +304,68 @@
     return `${Number(value || 0).toLocaleString("en-US")} KIP`;
   }
 
+  const standardCategories = ["icecream", "custom", "merch", "drink", "bundle", "other"];
+
+  function normalizeCategory(value) {
+    const text = String(value || "").trim().toLowerCase();
+    if (["icecream", "ice cream", "patuxai pops"].includes(text)) return "icecream";
+    if (["custom", "custom service", "定制服务"].includes(text)) return "custom";
+    if (["merch", "souvenir", "merchandise", "周边产品", "文创纪念品"].includes(text)) return "merch";
+    if (["drink", "饮品"].includes(text)) return "drink";
+    if (["bundle", "combo", "套餐"].includes(text)) return "bundle";
+    return "other";
+  }
+
+  function categoryLabel(category) {
+    const labels = {
+      icecream: "冰淇淋",
+      custom: "定制服务",
+      merch: "周边产品",
+      drink: "饮品",
+      bundle: "套餐",
+      other: "其他产品"
+    };
+    return labels[normalizeCategory(category)] || "其他产品";
+  }
+
+  function normalizePaymentMethod(value) {
+    const text = String(value || "").trim().toLowerCase();
+    if (["现金", "cash"].includes(text)) return "cash";
+    if (["扫码", "qr", "qr transfer", "scan", "bank transfer", "支付宝", "微信", "wechat", "alipay"].includes(text)) return "qr";
+    if (["card", "银行卡"].includes(text)) return "card";
+    return "other";
+  }
+
+  function paymentLabel(method) {
+    const labels = {
+      cash: "现金",
+      qr: "扫码",
+      card: "银行卡",
+      alipay: "支付宝",
+      wechat: "微信",
+      other: "其他"
+    };
+    return labels[normalizePaymentMethod(method)] || "其他";
+  }
+
+  function isRevenueOrder(order) {
+    return ["paid", "completed"].includes(String(order && order.status || "paid"));
+  }
+
+  function normalizeProduct(product) {
+    const category = normalizeCategory(product && product.category);
+    const price = Number(product && (product.selling_price ?? product.price) || 0);
+    return {
+      ...(product || {}),
+      category,
+      category_label: categoryLabel(category),
+      subcategory: product && product.subcategory ? product.subcategory : product && product.shape ? product.shape : "",
+      selling_price: price,
+      price,
+      low_stock_threshold: Number(product && product.low_stock_threshold || lowStockThreshold)
+    };
+  }
+
   const businessTimeZone = "Asia/Vientiane";
   const lowStockThreshold = 10;
 
@@ -526,6 +588,13 @@
     todayLabel,
     businessTimeZone,
     lowStockThreshold,
+    standardCategories,
+    normalizeCategory,
+    categoryLabel,
+    normalizePaymentMethod,
+    paymentLabel,
+    isRevenueOrder,
+    normalizeProduct,
     csvEscape,
     showToast,
     setSyncStatus,

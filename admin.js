@@ -29,7 +29,14 @@
     orderCount: document.querySelector("#orderCount"),
     itemCount: document.querySelector("#itemCount"),
     iceCreamItemCount: document.querySelector("#iceCreamItemCount"),
+    customItemCount: document.querySelector("#customItemCount"),
+    merchItemCount: document.querySelector("#merchItemCount"),
+    drinkItemCount: document.querySelector("#drinkItemCount"),
     otherItemCount: document.querySelector("#otherItemCount"),
+    cashSales: document.querySelector("#cashSales"),
+    qrSales: document.querySelector("#qrSales"),
+    cashDifference: document.querySelector("#cashDifference"),
+    lowStockSkuCount: document.querySelector("#lowStockSkuCount"),
     avgOrder: document.querySelector("#avgOrder"),
     productRanking: document.querySelector("#productRanking"),
     otherProductRanking: document.querySelector("#otherProductRanking"),
@@ -39,7 +46,9 @@
     stockSummary: document.querySelector("#stockSummary"),
     inventoryMovements: document.querySelector("#inventoryMovements"),
     ordersBody: document.querySelector("#ordersBody"),
-    exportCsv: document.querySelector("#exportCsv"),
+    exportOrdersCsv: document.querySelector("#exportOrdersCsv"),
+    exportItemsCsv: document.querySelector("#exportItemsCsv"),
+    exportInventoryCsv: document.querySelector("#exportInventoryCsv"),
     expectedCash: document.querySelector("#expectedCash"),
     actualCash: document.querySelector("#actualCash"),
     cashDiff: document.querySelector("#cashDiff"),
@@ -48,11 +57,17 @@
     menuEditor: document.querySelector("#menuEditor"),
     addProductForm: document.querySelector("#addProductForm"),
     testConnection: document.querySelector("#testConnection"),
-    productFilters: document.querySelector("#productFilters")
+    productFilters: document.querySelector("#productFilters"),
+    backTop: document.querySelector("#backTop")
   };
 
   if (el.menuEditor) {
     el.menuEditor.innerHTML = `<div class="empty">正在加载菜单...</div>`;
+  }
+
+  function updateBackTop() {
+    if (!el.backTop) return;
+    el.backTop.classList.toggle("show", window.scrollY > 420);
   }
 
   function escapeHtml(value) {
@@ -101,17 +116,23 @@
         .select("*")
         .order("sort_order", { ascending: true });
       if (productsResult.error) throw productsResult.error;
-      products = productsResult.data && productsResult.data.length ? productsResult.data : POS.productCatalog;
+      products = (productsResult.data && productsResult.data.length ? productsResult.data : POS.productCatalog).map(POS.normalizeProduct);
     } catch (error) {
-      products = POS.productCatalog;
+      products = POS.productCatalog.map(POS.normalizeProduct);
       issues.push("菜单");
     }
 
     try {
-      const ordersResult = await client
+      let ordersResult = await client
         .from("orders")
-        .select("id, day, time_text, payment_method, total, status, created_at, order_items(product_id, name, qty, price)")
+        .select("id, day, time_text, payment_method, total, total_amount, discount_amount, final_amount, status, cashier, note, created_at, order_items(product_id, name, product_name, category, subcategory, qty, quantity, price, unit_price, subtotal, item_type)")
         .order("created_at", { ascending: false });
+      if (ordersResult.error && /column|schema cache|relationship|select/i.test(ordersResult.error.message || "")) {
+        ordersResult = await client
+          .from("orders")
+          .select("id, day, time_text, payment_method, total, status, created_at, order_items(product_id, name, qty, price)")
+          .order("created_at", { ascending: false });
+      }
       if (ordersResult.error) throw ordersResult.error;
       orders = ordersResult.data || [];
     } catch (error) {
@@ -137,7 +158,7 @@
         .select("*")
         .order("created_at", { ascending: false });
       if (movementsResult.error) throw movementsResult.error;
-      inventoryMovements = (movementsResult.data || []).slice(0, 60);
+      inventoryMovements = movementsResult.data || [];
     } catch (error) {
       inventoryMovements = [];
       issues.push("库存记录");
@@ -169,20 +190,44 @@
   }
 
   function isIceCreamItem(item, product) {
-    const legacyIceCreamIds = new Set([
-      "mango-passion",
-      "strawberry-milk",
-      "pistachio",
-      "coconut-butterfly-pea",
-      "japanese-melon"
-    ]);
-    return currentProductIds.has(item.product_id) ||
-      legacyIceCreamIds.has(item.product_id) ||
-      Boolean(product && product.shape && product.flavor);
+    return itemCategory(item, product) === "icecream";
+  }
+
+  function itemQty(item) {
+    return Number(item.quantity ?? item.qty ?? 0);
+  }
+
+  function itemUnitPrice(item) {
+    return Number(item.unit_price ?? item.price ?? 0);
+  }
+
+  function itemSubtotal(item) {
+    return Number(item.subtotal ?? (itemUnitPrice(item) * itemQty(item)) ?? 0);
+  }
+
+  function orderAmount(order) {
+    return Number(order.final_amount ?? order.total_amount ?? order.total ?? 0);
+  }
+
+  function itemCategory(item, product) {
+    return POS.normalizeCategory(item.category || (product && product.category));
+  }
+
+  function statusLabel(status) {
+    const labels = {
+      paid: "已付款",
+      completed: "已完成",
+      cancelled: "已取消",
+      refunded: "已退款",
+      pending: "待同步",
+      void: "已作废"
+    };
+    return labels[status] || status || "已付款";
   }
 
   function makeProductId(name, category) {
-    const prefix = category === "定制服务" ? "custom" : category === "周边产品" ? "merch" : "product";
+    const normalized = POS.normalizeCategory(category);
+    const prefix = normalized === "custom" ? "custom" : normalized === "merch" ? "merch" : normalized;
     const suffix = String(name || "item")
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
@@ -200,7 +245,7 @@
       return currentProducts.filter(product => product.is_active === false);
     }
     if (activeProductFilter === "low") {
-      return currentProducts.filter(product => product.stock <= lowStockThreshold || product.sold_out);
+      return currentProducts.filter(product => product.stock <= (product.low_stock_threshold || lowStockThreshold) || product.sold_out);
     }
     return currentProducts;
   }
@@ -209,7 +254,7 @@
     if (!el.stockOverview) return;
     const activeProducts = products.filter(product => isCurrentMenuProduct(product) && product.is_active !== false);
     const totalStock = activeProducts.reduce((sum, product) => sum + Number(product.stock || 0), 0);
-    const lowCount = activeProducts.filter(product => product.stock <= lowStockThreshold || product.sold_out).length;
+    const lowCount = activeProducts.filter(product => product.stock <= (product.low_stock_threshold || lowStockThreshold) || product.sold_out).length;
     const soldOutCount = activeProducts.filter(product => product.sold_out || product.stock <= 0).length;
 
     el.stockOverview.innerHTML = `
@@ -233,7 +278,7 @@
   }
 
   function filteredOrders(includeVoid) {
-    const base = includeVoid ? orders : orders.filter(order => order.status !== "void");
+    const base = includeVoid ? orders : orders.filter(POS.isRevenueOrder);
     if (activeRange === "all") return base;
     if (activeRange === "today") {
       return base.filter(order => order.day === todayKey);
@@ -271,13 +316,13 @@
   }
 
   function activeOrdersForDay(day) {
-    return orders.filter(order => order.day === day && order.status !== "void");
+    return orders.filter(order => order.day === day && POS.isRevenueOrder(order));
   }
 
   function todayCashExpected() {
     return activeOrdersForDay(todayKey)
-      .filter(order => order.payment_method === "现金")
-      .reduce((sum, order) => sum + order.total, 0);
+      .filter(order => POS.normalizePaymentMethod(order.payment_method) === "cash")
+      .reduce((sum, order) => sum + orderAmount(order), 0);
   }
 
   function todayCloseout() {
@@ -288,15 +333,16 @@
     const expected = todayCashExpected();
     const closeout = todayCloseout();
     if (!el.actualCash.value && closeout) {
-      el.actualCash.value = closeout.actual_cash;
+      el.actualCash.value = closeout.actual_cash_amount ?? closeout.actual_cash;
     }
-    const actual = Number(el.actualCash.value || (closeout ? closeout.actual_cash : 0));
+    const actual = Number(el.actualCash.value || (closeout ? (closeout.actual_cash_amount ?? closeout.actual_cash) : 0));
     const diff = actual - expected;
 
     el.expectedCash.textContent = POS.money(expected);
     el.cashDiff.textContent = POS.money(diff);
+    if (el.cashDifference) el.cashDifference.textContent = POS.money(diff);
     el.closeHistory.textContent = closeout
-      ? `已保存：系统现金 ${POS.money(closeout.expected_cash)}，实际现金 ${POS.money(closeout.actual_cash)}，差额 ${POS.money(closeout.diff)}，时间 ${closeout.time_text}`
+      ? `已保存：系统现金 ${POS.money(closeout.system_cash ?? closeout.expected_cash)}，实际现金 ${POS.money(closeout.actual_cash_amount ?? closeout.actual_cash)}，差额 ${POS.money(closeout.cash_difference ?? closeout.diff)}，时间 ${closeout.time_text}`
       : "今天还没有日结记录。";
   }
 
@@ -326,7 +372,13 @@
         </label>
         <label>
           分类
-          <input class="field-input" name="category" value="${escapeAttr(product.category)}" required>
+          <select class="field-input" name="category" required>
+            ${POS.standardCategories.map(category => `<option value="${category}" ${product.category === category ? "selected" : ""}>${POS.categoryLabel(category)}</option>`).join("")}
+          </select>
+        </label>
+        <label>
+          子分类
+          <input class="field-input" name="subcategory" value="${escapeAttr(product.subcategory || product.shape || "")}" placeholder="例如：钥匙扣 / 激光雕刻">
         </label>
         <label>
           形状
@@ -337,8 +389,8 @@
           <input class="field-input" name="flavor" value="${escapeAttr(product.flavor || "")}" ${isMatrixProduct ? "readonly" : ""}>
         </label>
         <label>
-          价格 KIP
-          <input class="field-input" name="price" type="number" min="0" step="1000" value="${product.price}" required>
+          售价 KIP
+          <input class="field-input" name="price" type="number" min="0" step="1000" value="${product.selling_price}" required>
         </label>
         <label>
           库存
@@ -347,6 +399,10 @@
         <label>
           排序
           <input class="field-input" name="sort_order" type="number" step="1" value="${product.sort_order}" required>
+        </label>
+        <label>
+          低库存提醒
+          <input class="field-input" name="low_stock_threshold" type="number" min="0" step="1" value="${product.low_stock_threshold || lowStockThreshold}" required>
         </label>
         <label>
           形状排序
@@ -383,10 +439,15 @@
   function reasonText(reason) {
     const labels = {
       sale: "销售扣减",
+      gift: "赠品扣减",
       restock: "补货",
-      correction: "盘点修正",
+      adjustment: "盘点调整",
+      correction: "盘点调整",
       waste: "损耗",
-      void: "作废加回"
+      sample: "试吃",
+      return: "退货/取消加回",
+      void: "取消加回",
+      promotion: "促销赠品"
     };
     return labels[reason] || reason || "其他";
   }
@@ -398,19 +459,20 @@
       return;
     }
 
-    el.inventoryMovements.innerHTML = inventoryMovements.map(item => {
-      const change = Number(item.change_qty || 0);
+    el.inventoryMovements.innerHTML = inventoryMovements.slice(0, 60).map(item => {
+      const change = Number(item.quantity_change ?? item.change_qty ?? 0);
       const sign = change > 0 ? "+" : "";
       const tone = change > 0 ? "plus" : "minus";
+      const reason = item.change_type || item.reason;
       return `
         <div class="movement-item">
           <div>
             <strong>${escapeHtml(item.product_name)}</strong>
-            <small>${escapeHtml(item.day)} ${escapeHtml(item.time_text)} · ${reasonText(item.reason)}${item.note ? ` · ${escapeHtml(item.note)}` : ""}</small>
+            <small>${escapeHtml(item.day)} ${escapeHtml(item.time_text)} · ${reasonText(reason)}${item.note ? ` · ${escapeHtml(item.note)}` : ""}</small>
           </div>
           <div class="movement-numbers">
             <strong class="${tone}">${sign}${change}</strong>
-            <small>${item.before_stock} → ${item.after_stock}</small>
+            <small>${item.stock_before ?? item.before_stock} → ${item.stock_after ?? item.after_stock}</small>
           </div>
         </div>
       `;
@@ -419,14 +481,19 @@
 
   function render() {
     const activeOrders = filteredOrders(false);
-    const sales = activeOrders.reduce((sum, order) => sum + order.total, 0);
+    const sales = activeOrders.reduce((sum, order) => sum + orderAmount(order), 0);
     const itemCount = activeOrders.reduce((sum, order) => {
-      return sum + order.order_items.reduce((part, item) => part + item.qty, 0);
+      return sum + order.order_items.reduce((part, item) => part + itemQty(item), 0);
     }, 0);
     let iceCreamSales = 0;
     let otherSales = 0;
     let iceCreamItemCount = 0;
+    let customItemCount = 0;
+    let merchItemCount = 0;
+    let drinkItemCount = 0;
     let otherItemCount = 0;
+    let cashSales = 0;
+    let qrSales = 0;
 
     const productMap = new Map();
     const iceCreamProductMap = new Map();
@@ -435,21 +502,31 @@
     const categoryMap = new Map();
 
     activeOrders.forEach(order => {
-      addToMap(paymentMap, order.payment_method, 1, order.total);
+      const method = POS.normalizePaymentMethod(order.payment_method);
+      const amount = orderAmount(order);
+      if (method === "cash") cashSales += amount;
+      if (method === "qr") qrSales += amount;
+      addToMap(paymentMap, POS.paymentLabel(method), 1, amount);
       order.order_items.forEach(item => {
         const product = productById(item.product_id);
-        const amount = item.price * item.qty;
-        if (isIceCreamItem(item, product)) {
-          iceCreamSales += amount;
-          iceCreamItemCount += item.qty;
-          addToMap(iceCreamProductMap, item.name, item.qty, amount);
+        const qty = itemQty(item);
+        const lineAmount = itemSubtotal(item);
+        const category = itemCategory(item, product);
+        const itemName = item.product_name || item.name || (product && product.name) || "商品";
+        if (category === "icecream") {
+          iceCreamSales += lineAmount;
+          iceCreamItemCount += qty;
+          addToMap(iceCreamProductMap, itemName, qty, lineAmount);
         } else {
-          otherSales += amount;
-          otherItemCount += item.qty;
-          addToMap(otherProductMap, item.name, item.qty, amount);
+          otherSales += lineAmount;
+          if (category === "custom") customItemCount += qty;
+          else if (category === "merch") merchItemCount += qty;
+          else if (category === "drink") drinkItemCount += qty;
+          else otherItemCount += qty;
+          addToMap(otherProductMap, itemName, qty, lineAmount);
         }
-        addToMap(productMap, item.name, item.qty, amount);
-        addToMap(categoryMap, product ? product.category : "其他", item.qty, amount);
+        addToMap(productMap, itemName, qty, lineAmount);
+        addToMap(categoryMap, POS.categoryLabel(category), qty, lineAmount);
       });
     });
 
@@ -481,7 +558,19 @@
     el.orderCount.textContent = activeOrders.length;
     el.itemCount.textContent = itemCount;
     if (el.iceCreamItemCount) el.iceCreamItemCount.textContent = iceCreamItemCount;
+    if (el.customItemCount) el.customItemCount.textContent = customItemCount;
+    if (el.merchItemCount) el.merchItemCount.textContent = merchItemCount;
+    if (el.drinkItemCount) el.drinkItemCount.textContent = drinkItemCount;
     if (el.otherItemCount) el.otherItemCount.textContent = otherItemCount;
+    if (el.cashSales) el.cashSales.textContent = POS.money(cashSales);
+    if (el.qrSales) el.qrSales.textContent = POS.money(qrSales);
+    if (el.lowStockSkuCount) {
+      el.lowStockSkuCount.textContent = products.filter(product =>
+        isCurrentMenuProduct(product) &&
+        product.is_active !== false &&
+        (product.sold_out || product.stock <= (product.low_stock_threshold || lowStockThreshold))
+      ).length;
+    }
     el.avgOrder.textContent = POS.money(activeOrders.length ? Math.round(sales / activeOrders.length) : 0);
 
     renderBars(el.productRanking, iceCreamRows, "当前范围内还没有冰淇淋销售。");
@@ -492,7 +581,8 @@
     const visibleProducts = filteredProducts();
     renderStockOverview(visibleProducts);
     el.stockSummary.innerHTML = visibleProducts.length ? visibleProducts.map(product => {
-      const low = product.stock <= lowStockThreshold || product.sold_out;
+      const threshold = product.low_stock_threshold || lowStockThreshold;
+      const low = product.stock <= threshold || product.sold_out;
       const soldOut = product.sold_out || product.stock <= 0;
       const stockTone = soldOut ? "danger" : low ? "warning" : "";
       return `
@@ -500,7 +590,7 @@
         <div class="stock-card-main">
           <div>
             <strong>${escapeHtml(productDisplayName(product))}</strong>
-            <small>${escapeHtml(product.note || product.name)}${product.category ? ` · ${escapeHtml(product.category)}` : ""}</small>
+            <small>${escapeHtml(product.note || product.name)}${product.category ? ` · ${escapeHtml(POS.categoryLabel(product.category))}` : ""}</small>
           </div>
           <div class="stock-count ${stockTone}">
             <span>库存</span>
@@ -522,8 +612,10 @@
           <input class="field-input stock-input" data-stock-input="${escapeAttr(product.id)}" type="number" min="0" step="1" value="${product.stock}" aria-label="${escapeAttr(product.name)}库存">
           <select class="field-input stock-reason" data-stock-reason="${escapeAttr(product.id)}" aria-label="${escapeAttr(product.name)}库存原因">
             <option value="restock">补货</option>
-            <option value="correction">盘点修正</option>
+            <option value="adjustment">盘点调整</option>
             <option value="waste">损耗</option>
+            <option value="sample">试吃</option>
+            <option value="return">退货</option>
           </select>
           <input class="field-input stock-note" data-stock-note="${escapeAttr(product.id)}" placeholder="备注">
           <label class="compact-check">
@@ -541,17 +633,17 @@
 
     const tableOrders = filteredOrders(true);
     el.ordersBody.innerHTML = tableOrders.length ? tableOrders.map(order => {
-      const items = order.order_items.map(item => `${item.name} x${item.qty}`).join("、");
-      const isVoid = order.status === "void";
+      const items = order.order_items.map(item => `${item.product_name || item.name} x${itemQty(item)}`).join("、");
+      const canCancel = POS.isRevenueOrder(order);
       return `
         <tr>
           <td>${order.day}</td>
           <td>${order.time_text}</td>
           <td>${items}</td>
-          <td>${order.payment_method}</td>
-          <td><strong>${POS.money(order.total)}</strong></td>
-          <td>${isVoid ? "已作废" : "有效"}</td>
-          <td>${isVoid ? "" : `<button class="mini-button" data-void="${order.id}">作废</button>`}</td>
+          <td>${POS.paymentLabel(order.payment_method)}</td>
+          <td><strong>${POS.money(orderAmount(order))}</strong></td>
+          <td>${statusLabel(order.status)}</td>
+          <td>${canCancel ? `<button class="mini-button" data-void="${order.id}">取消</button>` : ""}</td>
         </tr>
       `;
     }).join("") : `<tr><td colspan="7">当前范围内还没有订单。</td></tr>`;
@@ -590,20 +682,22 @@
     if (!input) return;
 
     const nextStock = Math.max(0, Math.floor(stock));
+    const product = products.find(item => item.id === productId);
+    const threshold = product ? product.low_stock_threshold || lowStockThreshold : lowStockThreshold;
     input.value = nextStock;
-    row.classList.toggle("low", nextStock <= lowStockThreshold);
+    row.classList.toggle("low", nextStock <= threshold);
     if (count) {
       count.textContent = nextStock;
       const countBox = count.closest(".stock-count");
       if (countBox) {
         countBox.classList.toggle("danger", nextStock === 0);
-        countBox.classList.toggle("warning", nextStock > 0 && nextStock <= lowStockThreshold);
+        countBox.classList.toggle("warning", nextStock > 0 && nextStock <= threshold);
       }
     }
     if (state) {
-      state.textContent = nextStock === 0 ? "售空" : nextStock <= lowStockThreshold ? "低库存" : "可售";
+      state.textContent = nextStock === 0 ? "售空" : nextStock <= threshold ? "低库存" : "可售";
       state.classList.toggle("danger", nextStock === 0);
-      state.classList.toggle("warning", nextStock > 0 && nextStock <= lowStockThreshold);
+      state.classList.toggle("warning", nextStock > 0 && nextStock <= threshold);
     }
     if (soldOut) {
       soldOut.checked = options.soldOut ?? nextStock === 0;
@@ -624,14 +718,14 @@
     const next = Math.max(0, current + delta);
     updateStockDraft(productId, next, {
       soldOut: next === 0,
-      reason: delta > 0 ? "restock" : "correction"
+      reason: delta > 0 ? "restock" : "adjustment"
     });
   }
 
   function zeroStockDraft(productId) {
     updateStockDraft(productId, 0, {
       soldOut: true,
-      reason: "correction",
+      reason: "adjustment",
       note: "售空归零"
     });
   }
@@ -657,15 +751,28 @@
     POS.setBusy(button, true, "保存中");
     let result;
     try {
-      result = await client.rpc("adjust_stock", {
+      const payload = {
         p_product_id: productId,
         p_new_stock: Math.floor(stock),
         p_sold_out: Boolean(soldOut && soldOut.checked),
-        p_reason: reason ? reason.value : "correction",
+        p_reason: reason ? reason.value : "adjustment",
         p_note: note ? note.value.trim() : "",
         p_time_text: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
-        p_day: todayKey
-      });
+        p_day: todayKey,
+        p_operator: document.querySelector("#signedInAs") ? document.querySelector("#signedInAs").textContent : ""
+      };
+      result = await client.rpc("adjust_stock", payload);
+      if (result.error && /function|schema cache|parameter|argument|Invalid adjustment reason/i.test(result.error.message || "")) {
+        result = await client.rpc("adjust_stock", {
+          p_product_id: payload.p_product_id,
+          p_new_stock: payload.p_new_stock,
+          p_sold_out: payload.p_sold_out,
+          p_reason: payload.p_reason === "restock" ? "restock" : payload.p_reason === "waste" ? "waste" : "correction",
+          p_note: payload.p_note,
+          p_time_text: payload.p_time_text,
+          p_day: payload.p_day
+        });
+      }
     } catch (error) {
       POS.showToast(error.message || "库存保存失败");
       return false;
@@ -741,14 +848,17 @@
     const payload = {
       name: String(formData.get("name") || "").trim(),
       note: String(formData.get("note") || "").trim(),
-      category: String(formData.get("category") || "").trim(),
+      category: POS.normalizeCategory(formData.get("category")),
+      subcategory: String(formData.get("subcategory") || "").trim(),
       shape: String(formData.get("shape") || "").trim(),
       flavor: String(formData.get("flavor") || "").trim(),
       price: Number(formData.get("price") || 0),
+      selling_price: Number(formData.get("price") || 0),
       stock: Number(formData.get("stock") || 0),
       sort_order: Number(formData.get("sort_order") || 0),
       shape_order: Number(formData.get("shape_order") || 0),
       flavor_order: Number(formData.get("flavor_order") || 0),
+      low_stock_threshold: Number(formData.get("low_stock_threshold") || lowStockThreshold),
       image_path: String(formData.get("image_path") || "").trim(),
       sold_out: formData.has("sold_out"),
       is_active: formData.has("is_active"),
@@ -761,7 +871,7 @@
       return;
     }
 
-    if (!Number.isFinite(payload.price) || !Number.isFinite(payload.stock) || !Number.isFinite(payload.sort_order) || !Number.isFinite(payload.shape_order) || !Number.isFinite(payload.flavor_order)) {
+    if (!Number.isFinite(payload.price) || !Number.isFinite(payload.low_stock_threshold) || !Number.isFinite(payload.stock) || !Number.isFinite(payload.sort_order) || !Number.isFinite(payload.shape_order) || !Number.isFinite(payload.flavor_order)) {
       POS.showToast("价格、库存和排序必须是数字");
       return;
     }
@@ -813,17 +923,18 @@
 
     const formData = new FormData(form);
     const name = String(formData.get("name") || "").trim();
-    const category = String(formData.get("category") || "").trim();
+    const category = POS.normalizeCategory(formData.get("category"));
     const price = Number(formData.get("price") || 0);
     const stock = Number(formData.get("stock") || 0);
+    const lowStock = Number(formData.get("low_stock_threshold") || lowStockThreshold);
     const note = String(formData.get("note") || "").trim();
 
     if (!name || !category) {
       POS.showToast("产品名称和分类不能为空");
       return;
     }
-    if (!Number.isFinite(price) || price < 0 || !Number.isFinite(stock) || stock < 0) {
-      POS.showToast("价格和库存必须是 0 或更大的数字");
+    if (!Number.isFinite(price) || price < 0 || !Number.isFinite(stock) || stock < 0 || !Number.isFinite(lowStock) || lowStock < 0) {
+      POS.showToast("价格、库存和低库存提醒必须是 0 或更大的数字");
       return;
     }
 
@@ -832,18 +943,21 @@
       id: makeProductId(name, category),
       name,
       category,
+      subcategory: "",
       shape: "",
       flavor: "",
       shape_order: 0,
       flavor_order: 0,
       price: Math.floor(price),
+      selling_price: Math.floor(price),
       stock: Math.floor(stock),
+      low_stock_threshold: Math.floor(lowStock),
       sold_out: Math.floor(stock) <= 0,
       is_active: true,
       is_deleted: false,
       image_path: "assets/icons/app-icon-512.png",
       note,
-      sort_order: category === "定制服务" ? 100 + products.length : 200 + products.length,
+      sort_order: category === "custom" ? 100 + products.length : 200 + products.length,
       updated_at: new Date().toISOString()
     };
 
@@ -896,29 +1010,57 @@
   }
 
   async function voidOrder(orderId) {
-    const confirmed = window.confirm("确认作废这笔订单？库存会自动加回。");
+    const confirmed = window.confirm("确认取消这笔订单？库存会自动加回，并生成退回库存流水。");
     if (!confirmed) return;
     const result = await client.rpc("void_order", { p_order_id: orderId });
     if (result.error) {
       POS.showToast(result.error.message);
       return;
     }
-    POS.showToast("订单已作废");
+    POS.showToast("订单已取消，库存已加回");
     await refresh();
   }
 
   async function saveCloseout() {
     const expected = todayCashExpected();
     const actual = Number(el.actualCash.value || 0);
+    const todayOrders = activeOrdersForDay(todayKey);
+    const cashSales = todayOrders
+      .filter(order => POS.normalizePaymentMethod(order.payment_method) === "cash")
+      .reduce((sum, order) => sum + orderAmount(order), 0);
+    const qrSales = todayOrders
+      .filter(order => POS.normalizePaymentMethod(order.payment_method) === "qr")
+      .reduce((sum, order) => sum + orderAmount(order), 0);
+    const otherSales = todayOrders
+      .filter(order => !["cash", "qr"].includes(POS.normalizePaymentMethod(order.payment_method)))
+      .reduce((sum, order) => sum + orderAmount(order), 0);
     const payload = {
       day: todayKey,
       time_text: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
       expected_cash: expected,
       actual_cash: actual,
       diff: actual - expected,
+      cashier: document.querySelector("#signedInAs") ? document.querySelector("#signedInAs").textContent : "",
+      system_cash: expected,
+      actual_cash_amount: actual,
+      cash_difference: actual - expected,
+      cash_sales: cashSales,
+      qr_sales: qrSales,
+      other_sales: otherSales,
+      closed_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
-    const result = await client.from("closeouts").upsert(payload);
+    let result = await client.from("closeouts").upsert(payload);
+    if (result.error && /column|schema cache/i.test(result.error.message || "")) {
+      result = await client.from("closeouts").upsert({
+        day: payload.day,
+        time_text: payload.time_text,
+        expected_cash: payload.expected_cash,
+        actual_cash: payload.actual_cash,
+        diff: payload.diff,
+        updated_at: payload.updated_at
+      });
+    }
     if (result.error) {
       POS.showToast(result.error.message);
       return;
@@ -927,29 +1069,101 @@
     await refresh();
   }
 
-  function exportCsv() {
-    const rows = [["日期", "时间", "产品", "数量", "付款方式", "状态", "金额KIP"]];
-    filteredOrders(true).forEach(order => {
-      order.order_items.forEach(item => {
-        rows.push([
-          order.day,
-          order.time_text,
-          item.name,
-          item.qty,
-          order.payment_method,
-          order.status === "void" ? "已作废" : "有效",
-          item.price * item.qty
-        ]);
-      });
-    });
+  function downloadCsv(rows, filename) {
     const csv = rows.map(row => row.map(POS.csvEscape).join(",")).join("\n");
     const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `patuxai-pops-sales-${activeRange}.csv`;
+    link.download = filename;
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  function exportOrdersCsv() {
+    const rows = [[
+      "date", "time", "order_id", "total_amount", "payment_method", "status", "cashier",
+      "icecream_amount", "custom_amount", "merch_amount", "drink_amount", "other_amount",
+      "discount_amount", "final_amount", "items_summary"
+    ]];
+    filteredOrders(true).forEach(order => {
+      const amounts = { icecream: 0, custom: 0, merch: 0, drink: 0, other: 0 };
+      const itemsSummary = order.order_items.map(item => {
+        const product = productById(item.product_id);
+        const category = itemCategory(item, product);
+        const bucket = amounts[category] === undefined ? "other" : category;
+        amounts[bucket] += itemSubtotal(item);
+        return `${item.product_name || item.name} x${itemQty(item)}`;
+      }).join("、");
+      rows.push([
+        order.day,
+        order.time_text,
+        order.id,
+        order.total_amount ?? order.total ?? 0,
+        POS.normalizePaymentMethod(order.payment_method),
+        order.status || "paid",
+        order.cashier || "",
+        amounts.icecream,
+        amounts.custom,
+        amounts.merch,
+        amounts.drink,
+        amounts.other,
+        order.discount_amount || 0,
+        orderAmount(order),
+        itemsSummary
+      ]);
+    });
+    downloadCsv(rows, `patuxai-pops-orders-${activeRange}.csv`);
+  }
+
+  function exportItemsCsv() {
+    const rows = [[
+      "date", "time", "order_id", "product_id", "product_name", "category", "subcategory",
+      "quantity", "unit_price", "subtotal", "payment_method", "status"
+    ]];
+    filteredOrders(true).forEach(order => {
+      order.order_items.forEach(item => {
+        const product = productById(item.product_id);
+        rows.push([
+          order.day,
+          order.time_text,
+          order.id,
+          item.product_id,
+          item.product_name || item.name,
+          itemCategory(item, product),
+          item.subcategory || (product && product.subcategory) || "",
+          itemQty(item),
+          itemUnitPrice(item),
+          itemSubtotal(item),
+          POS.normalizePaymentMethod(order.payment_method),
+          order.status || "paid"
+        ]);
+      });
+    });
+    downloadCsv(rows, `patuxai-pops-order-items-${activeRange}.csv`);
+  }
+
+  function exportInventoryCsv() {
+    const rows = [[
+      "date", "time", "product_id", "product_name", "category", "change_type",
+      "quantity_change", "stock_before", "stock_after", "operator", "note"
+    ]];
+    inventoryMovements.forEach(item => {
+      rows.push([
+        item.day,
+        item.time_text,
+        item.product_id,
+        item.product_name,
+        POS.normalizeCategory(item.category),
+        item.change_type || item.reason,
+        item.quantity_change ?? item.change_qty ?? 0,
+        item.stock_before ?? item.before_stock ?? 0,
+        item.stock_after ?? item.after_stock ?? 0,
+        item.operator || "",
+        item.note || ""
+      ]);
+    });
+    downloadCsv(rows, `patuxai-pops-inventory-${activeRange}.csv`);
   }
 
   async function testConnection() {
@@ -1065,8 +1279,17 @@
 
   el.actualCash.addEventListener("input", renderCloseout);
   el.saveCloseout.addEventListener("click", saveCloseout);
-  el.exportCsv.addEventListener("click", exportCsv);
+  if (el.exportOrdersCsv) el.exportOrdersCsv.addEventListener("click", exportOrdersCsv);
+  if (el.exportItemsCsv) el.exportItemsCsv.addEventListener("click", exportItemsCsv);
+  if (el.exportInventoryCsv) el.exportInventoryCsv.addEventListener("click", exportInventoryCsv);
   if (el.testConnection) el.testConnection.addEventListener("click", testConnection);
+  if (el.backTop) {
+    el.backTop.addEventListener("click", () => {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    window.addEventListener("scroll", updateBackTop, { passive: true });
+    updateBackTop();
+  }
   if (el.addProductForm) {
     el.addProductForm.addEventListener("submit", event => {
       event.preventDefault();

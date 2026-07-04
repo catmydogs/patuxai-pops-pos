@@ -11,7 +11,7 @@
   <title>Patuxai Pops POS</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260704-split-quantity-stats">
+  <link rel="stylesheet" href="styles.css?v=20260704-pos-business-stats">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -89,9 +89,9 @@
           <div class="total"><span>应收</span><strong id="grandTotal">0 KIP</strong></div>
         </div>
         <div class="pay-methods" id="payMethods">
-          <button class="pay active" data-pay="现金">现金</button>
-          <button class="pay" data-pay="扫码">扫码</button>
-          <button class="pay" data-pay="其他">其他</button>
+          <button class="pay active" data-pay="cash">现金</button>
+          <button class="pay" data-pay="qr">扫码</button>
+          <button class="pay" data-pay="other">其他</button>
         </div>
         <div class="cash-presets" id="cashPresets">
           <button class="cash-preset" data-cash="exact">刚好</button>
@@ -109,8 +109,8 @@
   </div>
 
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260704-split-quantity-stats"></script>
-  <script src="common.js?v=20260704-split-quantity-stats"></script>
-  <script src="pos.js?v=20260704-split-quantity-stats"></script>
+  <script src="config.js?v=20260704-pos-business-stats"></script>
+  <script src="common.js?v=20260704-pos-business-stats"></script>
+  <script src="pos.js?v=20260704-pos-business-stats"></script>
 </body>
 </html>

@@ -852,6 +852,16 @@ aside {
   padding-top: 6px;
 }
 
+.discount-row {
+  display: grid;
+  grid-template-columns: 86px 1fr;
+  gap: 10px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
 .pay-methods,
 .cash-presets {
   display: grid;

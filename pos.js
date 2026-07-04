@@ -22,6 +22,8 @@
     searchInput: document.querySelector("#searchInput"),
     cartList: document.querySelector("#cartList"),
     subtotal: document.querySelector("#subtotal"),
+    discountText: document.querySelector("#discountText"),
+    discountInput: document.querySelector("#discountInput"),
     grandTotal: document.querySelector("#grandTotal"),
     checkoutBtn: document.querySelector("#checkoutBtn"),
     clearCart: document.querySelector("#clearCart"),
@@ -39,7 +41,9 @@
 
   function cartTotals() {
     const subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
-    return { subtotal, total: subtotal };
+    const rawDiscount = Number(el.discountInput && el.discountInput.value || 0);
+    const discount = Math.min(Math.max(0, rawDiscount), subtotal);
+    return { subtotal, discount, total: subtotal - discount };
   }
 
   function makeId() {
@@ -148,7 +152,7 @@
     try {
       let result = await client
         .from("orders")
-        .select("id, day, time_text, payment_method, total, total_amount, final_amount, status, cashier, note, order_items(product_id, name, product_name, category, subcategory, qty, quantity, price, unit_price, subtotal, item_type)")
+        .select("id, day, time_text, payment_method, total, total_amount, discount_amount, final_amount, status, cashier, note, order_items(product_id, name, product_name, category, subcategory, qty, quantity, price, unit_price, subtotal, item_type)")
         .eq("day", todayKey)
         .order("created_at", { ascending: false });
       if (result.error && /column|schema cache|relationship|select/i.test(result.error.message || "")) {
@@ -177,15 +181,16 @@
     updateSyncStatus();
   }
 
-  function makeLocalOrder(total) {
+  function makeLocalOrder(totals) {
     return {
       id: `local-${makeId()}`,
       day: todayKey,
       time_text: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
       payment_method: payMethod,
-      total,
-      total_amount: total,
-      final_amount: total,
+      total: totals.total,
+      total_amount: totals.subtotal,
+      discount_amount: totals.discount,
+      final_amount: totals.total,
       status: "pending",
       order_items: cart.map(item => ({
         product_id: item.product_id,
@@ -219,6 +224,7 @@
       })),
       p_payment_method: order.payment_method,
       p_total: order.total,
+      p_discount_amount: order.discount_amount || 0,
       p_time_text: order.time_text,
       p_day: order.day,
       p_cashier: document.querySelector("#signedInAs") ? document.querySelector("#signedInAs").textContent : "",
@@ -542,7 +548,11 @@
     }
 
     const totals = cartTotals();
+    if (el.discountInput && Number(el.discountInput.value || 0) !== totals.discount) {
+      el.discountInput.value = totals.discount || "";
+    }
     el.subtotal.textContent = POS.money(totals.subtotal);
+    if (el.discountText) el.discountText.textContent = totals.discount ? `-${POS.money(totals.discount)}` : POS.money(0);
     el.grandTotal.textContent = POS.money(totals.total);
     el.checkoutBtn.disabled = checkoutInFlight || cart.length === 0 || totals.total <= 0;
     updateCashPresets(totals.total);
@@ -619,13 +629,14 @@
     }
 
     checkoutInFlight = true;
-    const order = makeLocalOrder(totals.total);
+    const order = makeLocalOrder(totals);
     POS.setBusy(el.checkoutBtn, true, "提交中");
     if (!window.navigator.onLine) {
       saveOrderForLater(order);
       cart = [];
       saveCart();
       el.cashInput.value = "";
+      if (el.discountInput) el.discountInput.value = "";
       POS.setBusy(el.checkoutBtn, false);
       checkoutInFlight = false;
       renderAll();
@@ -647,6 +658,7 @@
       cart = [];
       saveCart();
       el.cashInput.value = "";
+      if (el.discountInput) el.discountInput.value = "";
       POS.setBusy(el.checkoutBtn, false);
       checkoutInFlight = false;
       renderAll();
@@ -659,6 +671,7 @@
     cart = [];
     saveCart();
     el.cashInput.value = "";
+    if (el.discountInput) el.discountInput.value = "";
     POS.showToast("已完成收款");
     await refresh();
   }
@@ -767,6 +780,7 @@
   });
 
   el.searchInput.addEventListener("input", renderProducts);
+  if (el.discountInput) el.discountInput.addEventListener("input", renderCart);
   el.cashInput.addEventListener("input", updateChange);
   el.checkoutBtn.addEventListener("click", checkout);
   el.clearCart.addEventListener("click", () => {
@@ -786,6 +800,8 @@
     el.clearCart.classList.remove("confirm");
     el.clearCart.textContent = "清空";
     cart = [];
+    if (el.discountInput) el.discountInput.value = "";
+    el.cashInput.value = "";
     saveCart();
     renderCart();
   });

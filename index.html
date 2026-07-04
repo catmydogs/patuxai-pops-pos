@@ -11,7 +11,7 @@
   <title>Patuxai Pops POS</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260704-pos-business-stats">
+  <link rel="stylesheet" href="styles.css?v=20260705-discount-checkout">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -86,8 +86,13 @@
       <div class="checkout">
         <div class="summary">
           <div><span>小计</span><strong id="subtotal">0 KIP</strong></div>
+          <div><span>折扣</span><strong id="discountText">0 KIP</strong></div>
           <div class="total"><span>应收</span><strong id="grandTotal">0 KIP</strong></div>
         </div>
+        <label class="discount-row" for="discountInput">
+          <span>折扣金额</span>
+          <input class="field-input" id="discountInput" inputmode="decimal" type="number" min="0" step="1000" placeholder="例如 10000">
+        </label>
         <div class="pay-methods" id="payMethods">
           <button class="pay active" data-pay="cash">现金</button>
           <button class="pay" data-pay="qr">扫码</button>
@@ -109,8 +114,8 @@
   </div>
 
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260704-pos-business-stats"></script>
-  <script src="common.js?v=20260704-pos-business-stats"></script>
-  <script src="pos.js?v=20260704-pos-business-stats"></script>
+  <script src="config.js?v=20260705-discount-checkout"></script>
+  <script src="common.js?v=20260705-discount-checkout"></script>
+  <script src="pos.js?v=20260705-discount-checkout"></script>
 </body>
 </html>

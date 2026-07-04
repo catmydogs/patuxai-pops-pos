@@ -24,8 +24,6 @@
   const el = {
     rangeText: document.querySelector("#rangeText"),
     salesTotal: document.querySelector("#salesTotal"),
-    iceCreamSales: document.querySelector("#iceCreamSales"),
-    otherSales: document.querySelector("#otherSales"),
     orderCount: document.querySelector("#orderCount"),
     itemCount: document.querySelector("#itemCount"),
     iceCreamItemCount: document.querySelector("#iceCreamItemCount"),
@@ -553,8 +551,6 @@
     };
     el.rangeText.textContent = `${labels[activeRange]} · ${POS.todayLabel ? POS.todayLabel() : new Date().toLocaleDateString("zh-CN")}`;
     el.salesTotal.textContent = POS.money(sales);
-    if (el.iceCreamSales) el.iceCreamSales.textContent = POS.money(iceCreamSales);
-    if (el.otherSales) el.otherSales.textContent = POS.money(otherSales);
     el.orderCount.textContent = activeOrders.length;
     el.itemCount.textContent = itemCount;
     if (el.iceCreamItemCount) el.iceCreamItemCount.textContent = iceCreamItemCount;

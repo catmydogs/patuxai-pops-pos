@@ -11,7 +11,7 @@
   <title>Patuxai Pops POS</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260705-image-compress">
+  <link rel="stylesheet" href="styles.css?v=20260705-layout-polish">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -79,7 +79,10 @@
 
     <aside aria-label="购物车">
       <div class="cart-head">
-        <h2>当前订单</h2>
+        <div>
+          <h2>当前订单</h2>
+          <span class="cart-count" id="cartCount">0 件</span>
+        </div>
         <button class="ghost" id="clearCart">清空</button>
       </div>
       <div class="cart-list" id="cartList"></div>
@@ -114,8 +117,8 @@
   </div>
 
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260705-image-compress"></script>
-  <script src="common.js?v=20260705-image-compress"></script>
-  <script src="pos.js?v=20260705-image-compress"></script>
+  <script src="config.js?v=20260705-layout-polish"></script>
+  <script src="common.js?v=20260705-layout-polish"></script>
+  <script src="pos.js?v=20260705-layout-polish"></script>
 </body>
 </html>

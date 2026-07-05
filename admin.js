@@ -30,6 +30,7 @@
     customItemCount: document.querySelector("#customItemCount"),
     merchItemCount: document.querySelector("#merchItemCount"),
     drinkItemCount: document.querySelector("#drinkItemCount"),
+    bundleItemCount: document.querySelector("#bundleItemCount"),
     otherItemCount: document.querySelector("#otherItemCount"),
     cashSales: document.querySelector("#cashSales"),
     qrSales: document.querySelector("#qrSales"),
@@ -37,7 +38,7 @@
     lowStockSkuCount: document.querySelector("#lowStockSkuCount"),
     avgOrder: document.querySelector("#avgOrder"),
     productRanking: document.querySelector("#productRanking"),
-    otherProductRanking: document.querySelector("#otherProductRanking"),
+    categoryBreakdown: document.querySelector("#categoryBreakdown"),
     paymentSummary: document.querySelector("#paymentSummary"),
     categorySummary: document.querySelector("#categorySummary"),
     stockOverview: document.querySelector("#stockOverview"),
@@ -241,6 +242,18 @@
     return Number(order.final_amount ?? order.total_amount ?? order.total ?? 0);
   }
 
+  function orderItemSubtotal(order) {
+    return (order.order_items || []).reduce((sum, item) => sum + itemSubtotal(item), 0);
+  }
+
+  function itemNetSubtotal(order, item) {
+    const subtotal = itemSubtotal(item);
+    const gross = Number(order.total_amount ?? orderItemSubtotal(order) ?? 0);
+    const finalAmount = orderAmount(order);
+    if (!gross || finalAmount >= gross) return subtotal;
+    return Math.round(subtotal * finalAmount / gross);
+  }
+
   function itemCategory(item, product) {
     return POS.normalizeCategory(item.category || (product && product.category));
   }
@@ -343,6 +356,39 @@
           <div class="bar-label"><strong>${row.name}</strong><span>${detail}</span></div>
           <div class="bar"><span style="width: ${width}%"></span></div>
         </div>
+      `;
+    }).join("");
+  }
+
+  function renderCategoryBreakdown(container, categoryStats, categoryProductMaps) {
+    if (!container) return;
+    const categories = POS.standardCategories.filter(category => category !== "icecream");
+    container.innerHTML = categories.map(category => {
+      const stats = categoryStats[category] || { qty: 0, amount: 0 };
+      const rows = [...(categoryProductMaps[category] || new Map()).entries()]
+        .map(([name, data]) => ({ name, ...data }))
+        .sort((a, b) => b.amount - a.amount);
+      const listHtml = rows.length
+        ? rows.map(row => {
+          const max = Math.max(...rows.map(item => item.amount || item.qty), 1);
+          const value = row.amount || row.qty;
+          const width = Math.max(4, (value / max) * 100);
+          return `
+            <div class="bar-row">
+              <div class="bar-label"><strong>${escapeHtml(row.name)}</strong><span>${POS.money(row.amount)} · ${row.qty} 件</span></div>
+              <div class="bar"><span style="width: ${width}%"></span></div>
+            </div>
+          `;
+        }).join("")
+        : `<div class="empty">当前范围内还没有${POS.categoryLabel(category)}销售。</div>`;
+      return `
+        <section class="category-stat">
+          <div class="category-stat-head">
+            <strong>${POS.categoryLabel(category)}</strong>
+            <span>${stats.qty} 件 · ${POS.money(stats.amount)}</span>
+          </div>
+          ${listHtml}
+        </section>
       `;
     }).join("");
   }
@@ -523,15 +569,17 @@
     let customItemCount = 0;
     let merchItemCount = 0;
     let drinkItemCount = 0;
+    let bundleItemCount = 0;
     let otherItemCount = 0;
     let cashSales = 0;
     let qrSales = 0;
 
     const productMap = new Map();
     const iceCreamProductMap = new Map();
-    const otherProductMap = new Map();
     const paymentMap = new Map();
     const categoryMap = new Map();
+    const categoryProductMaps = Object.fromEntries(POS.standardCategories.map(category => [category, new Map()]));
+    const categoryStats = Object.fromEntries(POS.standardCategories.map(category => [category, { qty: 0, amount: 0 }]));
 
     activeOrders.forEach(order => {
       const method = POS.normalizePaymentMethod(order.payment_method);
@@ -542,9 +590,13 @@
       order.order_items.forEach(item => {
         const product = productById(item.product_id);
         const qty = itemQty(item);
-        const lineAmount = itemSubtotal(item);
+        const lineAmount = itemNetSubtotal(order, item);
         const category = itemCategory(item, product);
         const itemName = item.product_name || item.name || (product && product.name) || "商品";
+        const stats = categoryStats[category] || categoryStats.other;
+        stats.qty += qty;
+        stats.amount += lineAmount;
+        addToMap(categoryProductMaps[category] || categoryProductMaps.other, itemName, qty, lineAmount);
         if (category === "icecream") {
           iceCreamSales += lineAmount;
           iceCreamItemCount += qty;
@@ -554,8 +606,8 @@
           if (category === "custom") customItemCount += qty;
           else if (category === "merch") merchItemCount += qty;
           else if (category === "drink") drinkItemCount += qty;
+          else if (category === "bundle") bundleItemCount += qty;
           else otherItemCount += qty;
-          addToMap(otherProductMap, itemName, qty, lineAmount);
         }
         addToMap(productMap, itemName, qty, lineAmount);
         addToMap(categoryMap, POS.categoryLabel(category), qty, lineAmount);
@@ -566,9 +618,6 @@
       .map(([name, data]) => ({ name, ...data }))
       .sort((a, b) => b.amount - a.amount);
     const iceCreamRows = [...iceCreamProductMap.entries()]
-      .map(([name, data]) => ({ name, ...data }))
-      .sort((a, b) => b.amount - a.amount);
-    const otherProductRows = [...otherProductMap.entries()]
       .map(([name, data]) => ({ name, ...data }))
       .sort((a, b) => b.amount - a.amount);
     const paymentRows = [...paymentMap.entries()]
@@ -591,6 +640,7 @@
     if (el.customItemCount) el.customItemCount.textContent = customItemCount;
     if (el.merchItemCount) el.merchItemCount.textContent = merchItemCount;
     if (el.drinkItemCount) el.drinkItemCount.textContent = drinkItemCount;
+    if (el.bundleItemCount) el.bundleItemCount.textContent = bundleItemCount;
     if (el.otherItemCount) el.otherItemCount.textContent = otherItemCount;
     if (el.cashSales) el.cashSales.textContent = POS.money(cashSales);
     if (el.qrSales) el.qrSales.textContent = POS.money(qrSales);
@@ -604,7 +654,7 @@
     el.avgOrder.textContent = POS.money(activeOrders.length ? Math.round(sales / activeOrders.length) : 0);
 
     renderBars(el.productRanking, iceCreamRows, "当前范围内还没有冰淇淋销售。");
-    if (el.otherProductRanking) renderBars(el.otherProductRanking, otherProductRows, "当前范围内还没有定制服务或周边销售。");
+    renderCategoryBreakdown(el.categoryBreakdown, categoryStats, categoryProductMaps);
     renderBars(el.paymentSummary, paymentRows, "当前范围内还没有付款记录。");
     renderBars(el.categorySummary, categoryRows, "当前范围内还没有类别数据。");
 
@@ -1122,7 +1172,7 @@
         const product = productById(item.product_id);
         const category = itemCategory(item, product);
         const bucket = amounts[category] === undefined ? "other" : category;
-        amounts[bucket] += itemSubtotal(item);
+        amounts[bucket] += itemNetSubtotal(order, item);
         return `${item.product_name || item.name} x${itemQty(item)}`;
       }).join("、");
       rows.push([

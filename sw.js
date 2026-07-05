@@ -1,4 +1,4 @@
-const CACHE_NAME = "patuxai-pops-pos-20260705-image-compress";
+const CACHE_NAME = "patuxai-pops-pos-20260705-layout-polish";
 const APP_SHELL = [
   "./",
   "./index.html",

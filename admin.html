@@ -11,7 +11,7 @@
   <title>Patuxai Pops 后台统计</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260705-image-compress">
+  <link rel="stylesheet" href="styles.css?v=20260705-layout-polish">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -80,6 +80,7 @@
       <div class="card"><span>定制服务数量</span><strong id="customItemCount">0</strong></div>
       <div class="card"><span>周边产品数量</span><strong id="merchItemCount">0</strong></div>
       <div class="card"><span>饮品数量</span><strong id="drinkItemCount">0</strong></div>
+      <div class="card"><span>套餐数量</span><strong id="bundleItemCount">0</strong></div>
       <div class="card"><span>其他产品数量</span><strong id="otherItemCount">0</strong></div>
       <div class="card"><span>现金销售</span><strong id="cashSales">0 KIP</strong></div>
       <div class="card"><span>扫码销售</span><strong id="qrSales">0 KIP</strong></div>
@@ -147,12 +148,12 @@
 
     <section class="dashboard">
       <div class="panel">
-        <h2>冰淇淋排行</h2>
+        <h2>冰淇淋销售</h2>
         <div class="list" id="productRanking"></div>
       </div>
-      <div class="panel">
-        <h2>定制与周边排行</h2>
-        <div class="list" id="otherProductRanking"></div>
+      <div class="panel category-breakdown-panel">
+        <h2>其他品类销售</h2>
+        <div class="category-breakdown" id="categoryBreakdown"></div>
       </div>
       <div class="panel">
         <h2>支付方式</h2>
@@ -195,8 +196,8 @@
 
   <button class="back-top" id="backTop" type="button" aria-label="返回顶部">↑ 顶部</button>
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260705-image-compress"></script>
-  <script src="common.js?v=20260705-image-compress"></script>
-  <script src="admin.js?v=20260705-image-compress"></script>
+  <script src="config.js?v=20260705-layout-polish"></script>
+  <script src="common.js?v=20260705-layout-polish"></script>
+  <script src="admin.js?v=20260705-layout-polish"></script>
 </body>
 </html>

@@ -21,6 +21,7 @@
     productGrid: document.querySelector("#productGrid"),
     searchInput: document.querySelector("#searchInput"),
     cartList: document.querySelector("#cartList"),
+    cartCount: document.querySelector("#cartCount"),
     subtotal: document.querySelector("#subtotal"),
     discountText: document.querySelector("#discountText"),
     discountInput: document.querySelector("#discountInput"),
@@ -548,6 +549,10 @@
     }
 
     const totals = cartTotals();
+    if (el.cartCount) {
+      const count = cart.reduce((sum, item) => sum + Number(item.qty || 0), 0);
+      el.cartCount.textContent = `${count} 件`;
+    }
     if (el.discountInput && Number(el.discountInput.value || 0) !== totals.discount) {
       el.discountInput.value = totals.discount || "";
     }

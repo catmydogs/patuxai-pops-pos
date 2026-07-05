@@ -324,27 +324,51 @@ h1 {
 
 .admin-shortcuts {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-  margin: 0 0 12px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin: 0 0 14px;
 }
 
 .admin-shortcuts a {
-  min-height: 52px;
+  min-height: 86px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  padding: 14px;
   font-weight: 750;
   color: var(--ink);
   box-shadow: 0 4px 16px rgba(31, 45, 61, 0.05);
 }
 
+.admin-shortcuts a strong {
+  font-size: 16px;
+}
+
+.admin-shortcuts a span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.admin-shortcuts a.active {
+  border-color: rgba(22, 129, 100, 0.38);
+  background: var(--mint-soft);
+  color: var(--mint);
+}
+
+.admin-shortcuts a.active span {
+  color: #326f5f;
+}
+
 .admin-shortcuts a:active {
   transform: scale(0.98);
+}
+
+.admin-filter-panel {
+  padding: 8px 0 4px;
 }
 
 .anchor-panel {

@@ -57,6 +57,7 @@
     addProductForm: document.querySelector("#addProductForm"),
     testConnection: document.querySelector("#testConnection"),
     productFilters: document.querySelector("#productFilters"),
+    adminShortcuts: document.querySelector("#adminShortcuts"),
     backTop: document.querySelector("#backTop")
   };
 
@@ -67,6 +68,40 @@
   function updateBackTop() {
     if (!el.backTop) return;
     el.backTop.classList.toggle("show", window.scrollY > 420);
+  }
+
+  const adminViewByHash = {
+    home: "home",
+    analytics: "analytics",
+    analyticsPanel: "analytics",
+    menuManagement: "menu",
+    stockManagement: "stock",
+    inventoryMovementsPanel: "inventory",
+    closeoutPanel: "closeout",
+    ordersPanel: "orders"
+  };
+
+  function currentAdminView() {
+    const key = (window.location.hash || "#home").replace("#", "");
+    return adminViewByHash[key] || key || "home";
+  }
+
+  function setAdminView(view) {
+    const activeView = adminViewByHash[view] || view || "home";
+    document.querySelectorAll("[data-admin-view]").forEach(section => {
+      section.hidden = section.dataset.adminView !== activeView;
+    });
+    if (el.productFilters) {
+      el.productFilters.hidden = !["menu", "stock"].includes(activeView);
+    }
+    if (el.adminShortcuts) {
+      el.adminShortcuts.querySelectorAll("[data-admin-nav]").forEach(link => {
+        link.classList.toggle("active", link.dataset.adminNav === activeView);
+      });
+    }
+    if (el.backTop) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   }
 
   function escapeHtml(value) {
@@ -1304,6 +1339,8 @@
     });
   }
 
+  window.addEventListener("hashchange", () => setAdminView(currentAdminView()));
+
   document.body.addEventListener("click", event => {
     const soldOutButton = event.target.closest("[data-soldout]");
     if (soldOutButton) {
@@ -1386,5 +1423,6 @@
     uploadProductImage(input);
   });
 
+  setAdminView(currentAdminView());
   POS.initAuth(client, refresh).catch(error => POS.showToast(error.message));
 })();

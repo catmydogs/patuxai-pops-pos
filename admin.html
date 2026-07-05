@@ -11,7 +11,7 @@
   <title>Patuxai Pops 后台统计</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260705-layout-polish">
+  <link rel="stylesheet" href="styles.css?v=20260706-admin-dashboard">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -41,7 +41,7 @@
       </div>
       <div class="actions">
         <a class="button" href="index.html">返回点单</a>
-        <a class="button primary" href="#menuManagement">菜单管理</a>
+        <a class="button primary" href="#home">功能首页</a>
         <button class="button" id="testConnection" type="button">测试连接</button>
         <button class="button primary" id="exportOrdersCsv">导出订单 CSV</button>
         <button class="button" id="exportItemsCsv">导出明细 CSV</button>
@@ -56,22 +56,45 @@
       <button data-range="all">全部</button>
     </nav>
 
-    <nav class="admin-shortcuts" aria-label="后台快捷入口">
-      <a href="#menuManagement">菜单管理</a>
-      <a href="#stockManagement">库存售罄</a>
-      <a href="#inventoryMovementsPanel">库存记录</a>
-      <a href="#closeoutPanel">日结</a>
-      <a href="#ordersPanel">订单明细</a>
+    <nav class="admin-shortcuts" id="adminShortcuts" aria-label="后台功能仪表盘">
+      <a href="#home" data-admin-nav="home">
+        <strong>首页看板</strong>
+        <span>今日经营概览</span>
+      </a>
+      <a href="#analytics" data-admin-nav="analytics">
+        <strong>销售分析</strong>
+        <span>品类、支付、排行</span>
+      </a>
+      <a href="#menuManagement" data-admin-nav="menu">
+        <strong>菜单管理</strong>
+        <span>新增、下架、改图</span>
+      </a>
+      <a href="#stockManagement" data-admin-nav="stock">
+        <strong>库存管理</strong>
+        <span>补货、售罄、损耗</span>
+      </a>
+      <a href="#inventoryMovementsPanel" data-admin-nav="inventory">
+        <strong>库存记录</strong>
+        <span>查看库存流水</span>
+      </a>
+      <a href="#closeoutPanel" data-admin-nav="closeout">
+        <strong>日结</strong>
+        <span>现金核对</span>
+      </a>
+      <a href="#ordersPanel" data-admin-nav="orders">
+        <strong>订单明细</strong>
+        <span>查询、取消订单</span>
+      </a>
     </nav>
 
-    <nav class="product-filters" id="productFilters" aria-label="产品筛选">
+    <nav class="product-filters admin-filter-panel" id="productFilters" aria-label="产品筛选">
       <button data-product-filter="all">当前菜单</button>
       <button class="active" data-product-filter="active">上架中</button>
       <button data-product-filter="inactive">已下架</button>
       <button data-product-filter="low">低库存</button>
     </nav>
 
-    <section class="stats" aria-label="汇总">
+    <section class="stats admin-view" data-admin-view="home" aria-label="汇总">
       <div class="card"><span>今日销售额</span><strong id="salesTotal">0 KIP</strong></div>
       <div class="card"><span>今日订单数</span><strong id="orderCount">0</strong></div>
       <div class="card"><span>客单价</span><strong id="avgOrder">0 KIP</strong></div>
@@ -88,7 +111,7 @@
       <div class="card"><span>低库存 SKU</span><strong id="lowStockSkuCount">0</strong></div>
     </section>
 
-    <section class="panel anchor-panel" id="closeoutPanel">
+    <section class="panel anchor-panel admin-view" id="closeoutPanel" data-admin-view="closeout">
       <h2>今日日结</h2>
       <div class="close-form">
         <label>
@@ -108,7 +131,7 @@
       <div class="close-history" id="closeHistory">今天还没有日结记录。</div>
     </section>
 
-    <section class="panel anchor-panel" id="menuManagement">
+    <section class="panel anchor-panel admin-view" id="menuManagement" data-admin-view="menu">
       <h2>菜单管理</h2>
       <form class="add-product-form" id="addProductForm">
         <label>
@@ -146,7 +169,7 @@
       <div class="menu-editor" id="menuEditor"></div>
     </section>
 
-    <section class="dashboard">
+    <section class="dashboard admin-view" id="analyticsPanel" data-admin-view="analytics">
       <div class="panel">
         <h2>冰淇淋销售</h2>
         <div class="list" id="productRanking"></div>
@@ -163,19 +186,20 @@
         <h2>类别销售</h2>
         <div class="list" id="categorySummary"></div>
       </div>
-      <div class="panel anchor-panel" id="stockManagement">
-        <h2>库存与售罄</h2>
-        <div class="stock-overview" id="stockOverview"></div>
-        <div class="list" id="stockSummary"></div>
-      </div>
     </section>
 
-    <section class="panel anchor-panel" id="inventoryMovementsPanel">
+    <section class="panel anchor-panel admin-view" id="stockManagement" data-admin-view="stock">
+      <h2>库存与售罄</h2>
+      <div class="stock-overview" id="stockOverview"></div>
+      <div class="list" id="stockSummary"></div>
+    </section>
+
+    <section class="panel anchor-panel admin-view" id="inventoryMovementsPanel" data-admin-view="inventory">
       <h2>库存记录</h2>
       <div class="list" id="inventoryMovements"></div>
     </section>
 
-    <section class="panel anchor-panel" id="ordersPanel">
+    <section class="panel anchor-panel admin-view" id="ordersPanel" data-admin-view="orders">
       <h2>订单明细</h2>
       <table>
         <thead>
@@ -196,8 +220,8 @@
 
   <button class="back-top" id="backTop" type="button" aria-label="返回顶部">↑ 顶部</button>
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260705-layout-polish"></script>
-  <script src="common.js?v=20260705-layout-polish"></script>
-  <script src="admin.js?v=20260705-layout-polish"></script>
+  <script src="config.js?v=20260706-admin-dashboard"></script>
+  <script src="common.js?v=20260706-admin-dashboard"></script>
+  <script src="admin.js?v=20260706-admin-dashboard"></script>
 </body>
 </html>

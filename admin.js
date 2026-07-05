@@ -80,6 +80,12 @@
     return escapeHtml(value).replace(/'/g, "&#39;");
   }
 
+  function formatFileSize(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return "0 KB";
+    if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+
   function imageFileToDataUrl(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -88,7 +94,7 @@
         const image = new Image();
         image.onerror = () => reject(new Error("图片格式无法识别"));
         image.onload = () => {
-          const maxSide = 1200;
+          const maxSide = 900;
           const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
           const canvas = document.createElement("canvas");
           canvas.width = Math.max(1, Math.round(image.width * scale));
@@ -97,7 +103,35 @@
           context.fillStyle = "#ffffff";
           context.fillRect(0, 0, canvas.width, canvas.height);
           context.drawImage(image, 0, 0, canvas.width, canvas.height);
-          resolve(canvas.toDataURL("image/jpeg", 0.86));
+          const finish = dataUrl => resolve({
+            dataUrl,
+            originalSize: file.size,
+            compressedSize: Math.round((dataUrl.length - dataUrl.indexOf(",") - 1) * 0.75),
+            width: canvas.width,
+            height: canvas.height
+          });
+
+          if (canvas.toBlob) {
+            canvas.toBlob(blob => {
+              if (!blob) {
+                finish(canvas.toDataURL("image/jpeg", 0.8));
+                return;
+              }
+              const compressedReader = new FileReader();
+              compressedReader.onerror = () => reject(new Error("图片压缩失败"));
+              compressedReader.onload = () => resolve({
+                dataUrl: compressedReader.result,
+                originalSize: file.size,
+                compressedSize: blob.size,
+                width: canvas.width,
+                height: canvas.height
+              });
+              compressedReader.readAsDataURL(blob);
+            }, "image/jpeg", 0.8);
+            return;
+          }
+
+          finish(canvas.toDataURL("image/jpeg", 0.8));
         };
         image.src = reader.result;
       };
@@ -808,14 +842,14 @@
     const uploadLabel = input.closest(".image-upload");
     uploadLabel.classList.add("uploading");
     try {
-      const dataUrl = await imageFileToDataUrl(file);
+      const compressed = await imageFileToDataUrl(file);
       if (imagePathInput) {
-        imagePathInput.value = dataUrl;
+        imagePathInput.value = compressed.dataUrl;
       }
 
       const updateResult = await client
         .from("products")
-        .update({ image_path: dataUrl, updated_at: new Date().toISOString() })
+        .update({ image_path: compressed.dataUrl, updated_at: new Date().toISOString() })
         .eq("id", productId);
 
       if (updateResult.error) {
@@ -823,7 +857,7 @@
         return;
       }
 
-      POS.showToast("图片已更新");
+      POS.showToast(`图片已压缩并更新：${formatFileSize(compressed.originalSize)} → ${formatFileSize(compressed.compressedSize)}`);
       await refresh();
     } catch (error) {
       POS.showToast(error.message);

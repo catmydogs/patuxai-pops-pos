@@ -15,6 +15,7 @@
     "grapefruit-sparkle"
   ]);
   let activeRange = "today";
+  let selectedDate = todayKey;
   let activeProductFilter = "active";
   let products = [];
   let orders = [];
@@ -23,6 +24,7 @@
 
   const el = {
     rangeText: document.querySelector("#rangeText"),
+    dateFilter: document.querySelector("#dateFilter"),
     salesTotal: document.querySelector("#salesTotal"),
     orderCount: document.querySelector("#orderCount"),
     itemCount: document.querySelector("#itemCount"),
@@ -34,6 +36,7 @@
     otherItemCount: document.querySelector("#otherItemCount"),
     cashSales: document.querySelector("#cashSales"),
     qrSales: document.querySelector("#qrSales"),
+    otherPaymentSales: document.querySelector("#otherPaymentSales"),
     cashDifference: document.querySelector("#cashDifference"),
     lowStockSkuCount: document.querySelector("#lowStockSkuCount"),
     avgOrder: document.querySelector("#avgOrder"),
@@ -363,10 +366,38 @@
     if (activeRange === "today") {
       return base.filter(order => order.day === todayKey);
     }
+    if (activeRange === "date") {
+      return base.filter(order => order.day === selectedDate);
+    }
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 6);
     const cutoffKey = POS.dateKey ? POS.dateKey(cutoff) : cutoff.toISOString().slice(0, 10);
     return base.filter(order => order.day >= cutoffKey);
+  }
+
+  function filteredInventoryMovements() {
+    if (activeRange === "all") return inventoryMovements;
+    if (activeRange === "today") return inventoryMovements.filter(item => item.day === todayKey);
+    if (activeRange === "date") return inventoryMovements.filter(item => item.day === selectedDate);
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 6);
+    const cutoffKey = POS.dateKey ? POS.dateKey(cutoff) : cutoff.toISOString().slice(0, 10);
+    return inventoryMovements.filter(item => item.day >= cutoffKey);
+  }
+
+  function rangeLabel() {
+    if (activeRange === "today") return "今天";
+    if (activeRange === "7days") return "近 7 天";
+    if (activeRange === "all") return "全部订单";
+    return selectedDate;
+  }
+
+  function rangeFileLabel() {
+    return activeRange === "date" ? selectedDate : activeRange;
+  }
+
+  function closeoutDay() {
+    return activeRange === "date" ? selectedDate : todayKey;
   }
 
   function addToMap(map, key, qty, amount) {
@@ -433,20 +464,20 @@
   }
 
   function todayCashExpected() {
-    return activeOrdersForDay(todayKey)
+    return activeOrdersForDay(closeoutDay())
       .filter(order => POS.normalizePaymentMethod(order.payment_method) === "cash")
       .reduce((sum, order) => sum + orderAmount(order), 0);
   }
 
   function todayCloseout() {
-    return closeouts.find(closeout => closeout.day === todayKey);
+    return closeouts.find(closeout => closeout.day === closeoutDay());
   }
 
-  function renderCloseout() {
+  function renderCloseout(options = {}) {
     const expected = todayCashExpected();
     const closeout = todayCloseout();
-    if (!el.actualCash.value && closeout) {
-      el.actualCash.value = closeout.actual_cash_amount ?? closeout.actual_cash;
+    if (!options.preserveInput) {
+      el.actualCash.value = closeout ? (closeout.actual_cash_amount ?? closeout.actual_cash ?? "") : "";
     }
     const actual = Number(el.actualCash.value || (closeout ? (closeout.actual_cash_amount ?? closeout.actual_cash) : 0));
     const diff = actual - expected;
@@ -456,7 +487,7 @@
     if (el.cashDifference) el.cashDifference.textContent = POS.money(diff);
     el.closeHistory.textContent = closeout
       ? `已保存：系统现金 ${POS.money(closeout.system_cash ?? closeout.expected_cash)}，实际现金 ${POS.money(closeout.actual_cash_amount ?? closeout.actual_cash)}，差额 ${POS.money(closeout.cash_difference ?? closeout.diff)}，时间 ${closeout.time_text}`
-      : "今天还没有日结记录。";
+      : `${closeoutDay()} 还没有日结记录。`;
   }
 
   function renderMenuEditor() {
@@ -558,7 +589,8 @@
       correction: "盘点调整",
       waste: "损耗",
       sample: "试吃",
-      return: "退货/取消加回",
+      return: "退货",
+      cancel_return: "取消订单恢复库存",
       void: "取消加回",
       promotion: "促销赠品"
     };
@@ -567,12 +599,13 @@
 
   function renderInventoryMovements() {
     if (!el.inventoryMovements) return;
-    if (!inventoryMovements.length) {
+    const visibleMovements = filteredInventoryMovements();
+    if (!visibleMovements.length) {
       el.inventoryMovements.innerHTML = `<div class="empty">还没有库存记录。补货、盘点修正、销售扣减后会显示在这里。</div>`;
       return;
     }
 
-    el.inventoryMovements.innerHTML = inventoryMovements.slice(0, 60).map(item => {
+    el.inventoryMovements.innerHTML = visibleMovements.slice(0, 60).map(item => {
       const change = Number(item.quantity_change ?? item.change_qty ?? 0);
       const sign = change > 0 ? "+" : "";
       const tone = change > 0 ? "plus" : "minus";
@@ -608,6 +641,7 @@
     let otherItemCount = 0;
     let cashSales = 0;
     let qrSales = 0;
+    let otherPaymentSales = 0;
 
     const productMap = new Map();
     const iceCreamProductMap = new Map();
@@ -621,6 +655,7 @@
       const amount = orderAmount(order);
       if (method === "cash") cashSales += amount;
       if (method === "qr") qrSales += amount;
+      if (!["cash", "qr"].includes(method)) otherPaymentSales += amount;
       addToMap(paymentMap, POS.paymentLabel(method), 1, amount);
       order.order_items.forEach(item => {
         const product = productById(item.product_id);
@@ -662,12 +697,7 @@
       .map(([name, data]) => ({ name, ...data }))
       .sort((a, b) => b.amount - a.amount);
 
-    const labels = {
-      today: "今天",
-      "7days": "近 7 天",
-      all: "全部订单"
-    };
-    el.rangeText.textContent = `${labels[activeRange]} · ${POS.todayLabel ? POS.todayLabel() : new Date().toLocaleDateString("zh-CN")}`;
+    el.rangeText.textContent = `${rangeLabel()} · ${POS.todayLabel ? POS.todayLabel() : new Date().toLocaleDateString("zh-CN")}`;
     el.salesTotal.textContent = POS.money(sales);
     el.orderCount.textContent = activeOrders.length;
     el.itemCount.textContent = itemCount;
@@ -679,6 +709,7 @@
     if (el.otherItemCount) el.otherItemCount.textContent = otherItemCount;
     if (el.cashSales) el.cashSales.textContent = POS.money(cashSales);
     if (el.qrSales) el.qrSales.textContent = POS.money(qrSales);
+    if (el.otherPaymentSales) el.otherPaymentSales.textContent = POS.money(otherPaymentSales);
     if (el.lowStockSkuCount) {
       el.lowStockSkuCount.textContent = products.filter(product =>
         isCurrentMenuProduct(product) &&
@@ -730,7 +761,6 @@
             <option value="adjustment">盘点调整</option>
             <option value="waste">损耗</option>
             <option value="sample">试吃</option>
-            <option value="return">退货</option>
           </select>
           <input class="field-input stock-note" data-stock-note="${escapeAttr(product.id)}" placeholder="备注">
           <label class="compact-check">
@@ -1139,7 +1169,8 @@
   async function saveCloseout() {
     const expected = todayCashExpected();
     const actual = Number(el.actualCash.value || 0);
-    const todayOrders = activeOrdersForDay(todayKey);
+    const day = closeoutDay();
+    const todayOrders = activeOrdersForDay(day);
     const cashSales = todayOrders
       .filter(order => POS.normalizePaymentMethod(order.payment_method) === "cash")
       .reduce((sum, order) => sum + orderAmount(order), 0);
@@ -1150,7 +1181,7 @@
       .filter(order => !["cash", "qr"].includes(POS.normalizePaymentMethod(order.payment_method)))
       .reduce((sum, order) => sum + orderAmount(order), 0);
     const payload = {
-      day: todayKey,
+      day,
       time_text: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
       expected_cash: expected,
       actual_cash: actual,
@@ -1197,38 +1228,24 @@
 
   function exportOrdersCsv() {
     const rows = [[
-      "date", "time", "order_id", "total_amount", "payment_method", "status", "cashier",
-      "icecream_amount", "custom_amount", "merch_amount", "drink_amount", "other_amount",
-      "discount_amount", "final_amount", "items_summary"
+      "date", "time", "order_id", "total_amount", "payment_method", "status", "cashier", "items_summary"
     ]];
     filteredOrders(true).forEach(order => {
-      const amounts = { icecream: 0, custom: 0, merch: 0, drink: 0, other: 0 };
       const itemsSummary = order.order_items.map(item => {
-        const product = productById(item.product_id);
-        const category = itemCategory(item, product);
-        const bucket = amounts[category] === undefined ? "other" : category;
-        amounts[bucket] += itemNetSubtotal(order, item);
         return `${item.product_name || item.name} x${itemQty(item)}`;
       }).join("、");
       rows.push([
         order.day,
         order.time_text,
         order.id,
-        order.total_amount ?? order.total ?? 0,
+        orderAmount(order),
         POS.normalizePaymentMethod(order.payment_method),
         order.status || "paid",
         order.cashier || "",
-        amounts.icecream,
-        amounts.custom,
-        amounts.merch,
-        amounts.drink,
-        amounts.other,
-        order.discount_amount || 0,
-        orderAmount(order),
         itemsSummary
       ]);
     });
-    downloadCsv(rows, `patuxai-pops-orders-${activeRange}.csv`);
+    downloadCsv(rows, `patuxai-pops-orders-${rangeFileLabel()}.csv`);
   }
 
   function exportItemsCsv() {
@@ -1255,7 +1272,7 @@
         ]);
       });
     });
-    downloadCsv(rows, `patuxai-pops-order-items-${activeRange}.csv`);
+    downloadCsv(rows, `patuxai-pops-order-items-${rangeFileLabel()}.csv`);
   }
 
   function exportInventoryCsv() {
@@ -1263,7 +1280,7 @@
       "date", "time", "product_id", "product_name", "category", "change_type",
       "quantity_change", "stock_before", "stock_after", "operator", "note"
     ]];
-    inventoryMovements.forEach(item => {
+    filteredInventoryMovements().forEach(item => {
       rows.push([
         item.day,
         item.time_text,
@@ -1278,7 +1295,7 @@
         item.note || ""
       ]);
     });
-    downloadCsv(rows, `patuxai-pops-inventory-${activeRange}.csv`);
+    downloadCsv(rows, `patuxai-pops-inventory-${rangeFileLabel()}.csv`);
   }
 
   async function testConnection() {
@@ -1324,8 +1341,20 @@
     if (!button) return;
     activeRange = button.dataset.range;
     document.querySelectorAll("[data-range]").forEach(item => item.classList.toggle("active", item === button));
+    if (el.dateFilter && activeRange === "today") el.dateFilter.value = todayKey;
     render();
   });
+
+  if (el.dateFilter) {
+    el.dateFilter.value = selectedDate;
+    el.dateFilter.addEventListener("change", () => {
+      if (!el.dateFilter.value) return;
+      selectedDate = el.dateFilter.value;
+      activeRange = "date";
+      document.querySelectorAll("[data-range]").forEach(item => item.classList.remove("active"));
+      render();
+    });
+  }
 
   if (el.productFilters) {
     el.productFilters.addEventListener("click", event => {
@@ -1394,7 +1423,7 @@
     updateStockDraft(soldOut.dataset.stockSoldout, stock, { soldOut: soldOut.checked });
   });
 
-  el.actualCash.addEventListener("input", renderCloseout);
+  el.actualCash.addEventListener("input", () => renderCloseout({ preserveInput: true }));
   el.saveCloseout.addEventListener("click", saveCloseout);
   if (el.exportOrdersCsv) el.exportOrdersCsv.addEventListener("click", exportOrdersCsv);
   if (el.exportItemsCsv) el.exportItemsCsv.addEventListener("click", exportItemsCsv);

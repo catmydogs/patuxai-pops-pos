@@ -2,7 +2,11 @@
   const client = POS.getClient();
   const todayKey = POS.todayKey();
   const productsCacheKey = "patuxai-pops-products-cache";
-  const pendingOrdersKey = "patuxai-pops-pending-orders";
+  const pendingOrdersKey = "patuxai-pops-pending_sync_orders";
+  const previousPendingOrdersKey = "patuxai-pops-pending-sync-orders";
+  const legacyPendingOrdersKey = "patuxai-pops-pending-orders";
+  const lastSyncedAtKey = "patuxai-pops-last_synced_at";
+  const retrySyncKey = "patuxai-pops-retry_sync_count";
   const cartCacheKey = `patuxai-pops-cart-${todayKey}`;
   const lowStockThreshold = POS.lowStockThreshold || 10;
   let products = [];
@@ -105,11 +109,32 @@
   }
 
   function loadPendingOrders() {
-    pendingOrders = readJson(pendingOrdersKey, []);
+    const current = readJson(pendingOrdersKey, []);
+    const previous = readJson(previousPendingOrdersKey, []);
+    const legacy = readJson(legacyPendingOrdersKey, []);
+    pendingOrders = current.length ? current : previous.length ? previous : legacy;
+    if (!current.length && (previous.length || legacy.length)) savePendingOrders();
   }
 
   function savePendingOrders() {
     writeJson(pendingOrdersKey, pendingOrders);
+  }
+
+  function saveLastSyncedAt() {
+    window.localStorage.setItem(lastSyncedAtKey, new Date().toISOString());
+  }
+
+  function lastSyncedLabel() {
+    const value = window.localStorage.getItem(lastSyncedAtKey);
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function recordRetrySync() {
+    const count = Number(window.localStorage.getItem(retrySyncKey) || 0) + 1;
+    window.localStorage.setItem(retrySyncKey, String(count));
   }
 
   function pendingForToday() {
@@ -125,7 +150,8 @@
       POS.setSyncStatus(`${pendingOrders.length} 单待同步`, "pending");
       return;
     }
-    POS.setSyncStatus("在线 · 已同步", "online");
+    const lastSynced = lastSyncedLabel();
+    POS.setSyncStatus(lastSynced ? `在线 · ${lastSynced} 已同步` : "在线 · 已同步", "online");
   }
 
   async function loadProducts() {
@@ -267,19 +293,26 @@
       try {
         const result = await submitOrder(order);
         if (result.error) {
+          recordRetrySync();
           remaining.push(order);
         } else {
           synced += 1;
         }
       } catch (error) {
+        recordRetrySync();
         remaining.push(order);
       }
     }
 
     pendingOrders = remaining;
     savePendingOrders();
+    if (synced) saveLastSyncedAt();
     updateSyncStatus();
     if (synced && !silent) POS.showToast(`已同步 ${synced} 单`);
+  }
+
+  function retrySync(silent) {
+    return syncPendingOrders(silent);
   }
 
   function skuProducts() {
@@ -812,7 +845,7 @@
   });
 
   window.addEventListener("online", () => {
-    syncPendingOrders(false).then(refresh).catch(error => POS.showToast(error.message));
+    retrySync(false).then(refresh).catch(error => POS.showToast(error.message));
   });
   window.addEventListener("offline", updateSyncStatus);
 

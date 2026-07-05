@@ -11,7 +11,7 @@
   <title>Patuxai Pops 后台统计</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260706-admin-dashboard">
+  <link rel="stylesheet" href="styles.css?v=20260706-date-filter">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -54,6 +54,10 @@
       <button class="active" data-range="today">今天</button>
       <button data-range="7days">近 7 天</button>
       <button data-range="all">全部</button>
+      <label class="date-filter">
+        <span>指定日期</span>
+        <input id="dateFilter" type="date">
+      </label>
     </nav>
 
     <nav class="admin-shortcuts" id="adminShortcuts" aria-label="后台功能仪表盘">
@@ -95,8 +99,8 @@
     </nav>
 
     <section class="stats admin-view" data-admin-view="home" aria-label="汇总">
-      <div class="card"><span>今日销售额</span><strong id="salesTotal">0 KIP</strong></div>
-      <div class="card"><span>今日订单数</span><strong id="orderCount">0</strong></div>
+      <div class="card"><span>销售额</span><strong id="salesTotal">0 KIP</strong></div>
+      <div class="card"><span>订单数</span><strong id="orderCount">0</strong></div>
       <div class="card"><span>客单价</span><strong id="avgOrder">0 KIP</strong></div>
       <div class="card"><span>总售出数量</span><strong id="itemCount">0</strong></div>
       <div class="card"><span>冰淇淋数量</span><strong id="iceCreamItemCount">0</strong></div>
@@ -107,6 +111,7 @@
       <div class="card"><span>其他产品数量</span><strong id="otherItemCount">0</strong></div>
       <div class="card"><span>现金销售</span><strong id="cashSales">0 KIP</strong></div>
       <div class="card"><span>扫码销售</span><strong id="qrSales">0 KIP</strong></div>
+      <div class="card"><span>其他支付销售</span><strong id="otherPaymentSales">0 KIP</strong></div>
       <div class="card"><span>现金差额</span><strong id="cashDifference">0 KIP</strong></div>
       <div class="card"><span>低库存 SKU</span><strong id="lowStockSkuCount">0</strong></div>
     </section>
@@ -220,8 +225,8 @@
 
   <button class="back-top" id="backTop" type="button" aria-label="返回顶部">↑ 顶部</button>
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260706-admin-dashboard"></script>
-  <script src="common.js?v=20260706-admin-dashboard"></script>
-  <script src="admin.js?v=20260706-admin-dashboard"></script>
+  <script src="config.js?v=20260706-date-filter"></script>
+  <script src="common.js?v=20260706-date-filter"></script>
+  <script src="admin.js?v=20260706-date-filter"></script>
 </body>
 </html>

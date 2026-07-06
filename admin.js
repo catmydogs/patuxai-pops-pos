@@ -25,6 +25,8 @@
   const el = {
     rangeText: document.querySelector("#rangeText"),
     dateFilter: document.querySelector("#dateFilter"),
+    dateSearchInput: document.querySelector("#dateSearchInput"),
+    dateSearchBtn: document.querySelector("#dateSearchBtn"),
     salesTotal: document.querySelector("#salesTotal"),
     orderCount: document.querySelector("#orderCount"),
     itemCount: document.querySelector("#itemCount"),
@@ -1336,23 +1338,47 @@
     await refresh();
   }
 
+  function syncDateInputs() {
+    if (el.dateFilter) el.dateFilter.value = selectedDate;
+    if (el.dateSearchInput) el.dateSearchInput.value = selectedDate;
+  }
+
+  function applyDateFilter(value) {
+    if (!value) return;
+    selectedDate = value;
+    activeRange = "date";
+    document.querySelectorAll("[data-range]").forEach(item => item.classList.remove("active"));
+    syncDateInputs();
+    render();
+  }
+
   document.querySelector(".range").addEventListener("click", event => {
     const button = event.target.closest("[data-range]");
     if (!button) return;
     activeRange = button.dataset.range;
     document.querySelectorAll("[data-range]").forEach(item => item.classList.toggle("active", item === button));
-    if (el.dateFilter && activeRange === "today") el.dateFilter.value = todayKey;
+    if (activeRange === "today") selectedDate = todayKey;
+    syncDateInputs();
     render();
   });
 
   if (el.dateFilter) {
-    el.dateFilter.value = selectedDate;
+    syncDateInputs();
     el.dateFilter.addEventListener("change", () => {
-      if (!el.dateFilter.value) return;
-      selectedDate = el.dateFilter.value;
-      activeRange = "date";
-      document.querySelectorAll("[data-range]").forEach(item => item.classList.remove("active"));
-      render();
+      applyDateFilter(el.dateFilter.value);
+    });
+  }
+
+  if (el.dateSearchInput) {
+    syncDateInputs();
+    el.dateSearchInput.addEventListener("change", () => {
+      applyDateFilter(el.dateSearchInput.value);
+    });
+  }
+
+  if (el.dateSearchBtn) {
+    el.dateSearchBtn.addEventListener("click", () => {
+      applyDateFilter(el.dateSearchInput && el.dateSearchInput.value);
     });
   }
 

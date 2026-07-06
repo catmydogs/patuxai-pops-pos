@@ -11,7 +11,7 @@
   <title>Patuxai Pops 后台统计</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260706-date-filter">
+  <link rel="stylesheet" href="styles.css?v=20260706-refresh">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -59,6 +59,17 @@
         <input id="dateFilter" type="date">
       </label>
     </nav>
+
+    <section class="date-search-panel" aria-label="按日期查询销售数据">
+      <div>
+        <strong>查询某一天</strong>
+        <span>选择日期后，首页看板、销售分析、订单和导出都会切换到这一天。</span>
+      </div>
+      <div class="date-search-actions">
+        <input id="dateSearchInput" type="date">
+        <button class="button primary" id="dateSearchBtn" type="button">查看这一天</button>
+      </div>
+    </section>
 
     <nav class="admin-shortcuts" id="adminShortcuts" aria-label="后台功能仪表盘">
       <a href="#home" data-admin-nav="home">
@@ -225,8 +236,8 @@
 
   <button class="back-top" id="backTop" type="button" aria-label="返回顶部">↑ 顶部</button>
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260706-date-filter"></script>
-  <script src="common.js?v=20260706-date-filter"></script>
-  <script src="admin.js?v=20260706-date-filter"></script>
+  <script src="config.js?v=20260706-refresh"></script>
+  <script src="common.js?v=20260706-refresh"></script>
+  <script src="admin.js?v=20260706-refresh"></script>
 </body>
 </html>

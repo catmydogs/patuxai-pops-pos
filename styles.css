@@ -330,6 +330,49 @@ h1 {
   background: transparent;
 }
 
+.date-search-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 0 16px;
+  padding: 14px;
+  border: 1px solid rgba(22, 129, 100, 0.22);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(31, 45, 61, 0.06);
+}
+
+.date-search-panel strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--ink);
+  font-size: 17px;
+}
+
+.date-search-panel span {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.date-search-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.date-search-actions input {
+  min-height: 44px;
+  min-width: 170px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 10px;
+  color: var(--ink);
+  background: #fff;
+}
+
 .tabs {
   position: sticky;
   top: 0;
@@ -1631,6 +1674,17 @@ th {
   .close-form,
   .admin-shortcuts {
     grid-template-columns: 1fr;
+  }
+
+  .date-search-panel,
+  .date-search-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .date-search-actions input,
+  .date-search-actions .button {
+    width: 100%;
   }
 
   .category-breakdown-panel {

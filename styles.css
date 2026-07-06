@@ -791,6 +791,7 @@ h1 {
 }
 
 .extra-products {
+  grid-column: 1 / -1;
   display: grid;
   gap: 12px;
   margin-top: 18px;
@@ -817,8 +818,8 @@ h1 {
 
 .extra-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
 }
 
 .product {
@@ -834,6 +835,62 @@ h1 {
 
 .product.low {
   border-color: rgba(217, 68, 68, 0.45);
+}
+
+.product-compact {
+  min-height: 92px;
+  grid-template-columns: 74px minmax(0, 1fr) 76px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+}
+
+.product-compact .product-image {
+  width: 74px;
+  height: 74px;
+  aspect-ratio: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.product-image-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--mint);
+  font-weight: 800;
+  background: var(--mint-soft);
+}
+
+.product-compact .product-body {
+  min-width: 0;
+  gap: 4px;
+  padding: 0;
+}
+
+.product-compact h2 {
+  overflow: hidden;
+  font-size: 16px;
+  line-height: 1.18;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.product-compact .meta {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.product-compact .price {
+  font-size: 16px;
+}
+
+.compact-add {
+  min-height: 58px;
+  padding: 8px;
+  font-size: 14px;
 }
 
 .product-image {

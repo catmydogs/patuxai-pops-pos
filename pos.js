@@ -394,12 +394,26 @@
     }).join("");
   }
 
-  function productCard(product) {
+  function productCard(product, mode) {
     const isUnavailable = product.sold_out || product.stock <= 0;
     const disabled = isUnavailable ? "disabled" : "";
     const low = product.stock <= (product.low_stock_threshold || lowStockThreshold) || product.sold_out ? "low" : "";
     const stockText = isUnavailable ? "售罄" : `库存 ${product.stock}`;
     const image = product.image_path ? `<img class="product-image" src="${assetUrl(product.image_path)}" alt="${product.name}">` : "";
+    const compact = mode === "compact";
+    if (compact) {
+      return `
+        <article class="product product-compact ${low}">
+          ${image || `<div class="product-image product-image-placeholder">${POS.categoryLabel(product.category).slice(0, 2)}</div>`}
+          <div class="product-body">
+            <h2>${product.name}</h2>
+            <div class="meta"><span>${product.note || POS.categoryLabel(product.category)}</span><span>${stockText}</span></div>
+            <div class="price">${POS.money(product.selling_price)}</div>
+          </div>
+          <button class="add compact-add" data-id="${product.id}" ${disabled}>${isUnavailable ? "售罄" : "加入"}</button>
+        </article>
+      `;
+    }
     return `
       <article class="product ${low}">
         ${image}
@@ -430,7 +444,7 @@
             <span>${categoryProducts.length} 款</span>
           </div>
           <div class="extra-grid">
-            ${categoryProducts.map(productCard).join("")}
+            ${categoryProducts.map(product => productCard(product, "compact")).join("")}
           </div>
         </section>
       `;

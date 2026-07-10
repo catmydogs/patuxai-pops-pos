@@ -363,9 +363,25 @@ h1 {
   flex: 0 0 auto;
 }
 
+.date-search-grid {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto minmax(150px, 1fr) auto minmax(150px, 1fr) minmax(150px, 1fr) auto;
+  align-items: end;
+  width: min(100%, 1120px);
+}
+
+.date-search-actions label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .date-search-actions input {
   min-height: 44px;
-  min-width: 170px;
+  min-width: 0;
+  width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 0 10px;
@@ -1657,6 +1673,21 @@ th {
     grid-template-columns: 1fr;
   }
 
+  .date-search-panel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .date-search-grid {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  }
+
+  .date-search-grid label:nth-of-type(3),
+  .date-search-grid label:nth-of-type(4),
+  .date-search-grid #rangeSearchBtn {
+    grid-column: span 1;
+  }
+
   aside {
     position: static;
     height: auto;
@@ -1733,10 +1764,13 @@ th {
     grid-template-columns: 1fr;
   }
 
-  .date-search-panel,
-  .date-search-actions {
+  .date-search-panel {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .date-search-grid {
+    grid-template-columns: 1fr;
   }
 
   .date-search-actions input,

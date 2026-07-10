@@ -16,6 +16,9 @@
   ]);
   let activeRange = "today";
   let selectedDate = todayKey;
+  let selectedMonth = todayKey.slice(0, 7);
+  let rangeStartDate = todayKey;
+  let rangeEndDate = todayKey;
   let activeProductFilter = "active";
   let products = [];
   let orders = [];
@@ -27,6 +30,11 @@
     dateFilter: document.querySelector("#dateFilter"),
     dateSearchInput: document.querySelector("#dateSearchInput"),
     dateSearchBtn: document.querySelector("#dateSearchBtn"),
+    monthSearchInput: document.querySelector("#monthSearchInput"),
+    monthSearchBtn: document.querySelector("#monthSearchBtn"),
+    rangeStartInput: document.querySelector("#rangeStartInput"),
+    rangeEndInput: document.querySelector("#rangeEndInput"),
+    rangeSearchBtn: document.querySelector("#rangeSearchBtn"),
     salesTotal: document.querySelector("#salesTotal"),
     orderCount: document.querySelector("#orderCount"),
     itemCount: document.querySelector("#itemCount"),
@@ -362,40 +370,56 @@
     `;
   }
 
-  function filteredOrders(includeVoid) {
-    const base = includeVoid ? orders : orders.filter(POS.isRevenueOrder);
-    if (activeRange === "all") return base;
-    if (activeRange === "today") {
-      return base.filter(order => order.day === todayKey);
-    }
-    if (activeRange === "date") {
-      return base.filter(order => order.day === selectedDate);
+  function normalizedRangeDates() {
+    const start = rangeStartDate <= rangeEndDate ? rangeStartDate : rangeEndDate;
+    const end = rangeStartDate <= rangeEndDate ? rangeEndDate : rangeStartDate;
+    return { start, end };
+  }
+
+  function inActiveDateRange(day) {
+    if (activeRange === "all") return true;
+    if (activeRange === "today") return day === todayKey;
+    if (activeRange === "date") return day === selectedDate;
+    if (activeRange === "month") return String(day || "").startsWith(`${selectedMonth}-`);
+    if (activeRange === "custom") {
+      const { start, end } = normalizedRangeDates();
+      return day >= start && day <= end;
     }
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 6);
     const cutoffKey = POS.dateKey ? POS.dateKey(cutoff) : cutoff.toISOString().slice(0, 10);
-    return base.filter(order => order.day >= cutoffKey);
+    return day >= cutoffKey;
+  }
+
+  function filteredOrders(includeVoid) {
+    const base = includeVoid ? orders : orders.filter(POS.isRevenueOrder);
+    return base.filter(order => inActiveDateRange(order.day));
   }
 
   function filteredInventoryMovements() {
-    if (activeRange === "all") return inventoryMovements;
-    if (activeRange === "today") return inventoryMovements.filter(item => item.day === todayKey);
-    if (activeRange === "date") return inventoryMovements.filter(item => item.day === selectedDate);
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 6);
-    const cutoffKey = POS.dateKey ? POS.dateKey(cutoff) : cutoff.toISOString().slice(0, 10);
-    return inventoryMovements.filter(item => item.day >= cutoffKey);
+    return inventoryMovements.filter(item => inActiveDateRange(item.day));
   }
 
   function rangeLabel() {
     if (activeRange === "today") return "今天";
     if (activeRange === "7days") return "近 7 天";
+    if (activeRange === "month") return `${selectedMonth} 月`;
+    if (activeRange === "custom") {
+      const { start, end } = normalizedRangeDates();
+      return `${start} 至 ${end}`;
+    }
     if (activeRange === "all") return "全部订单";
     return selectedDate;
   }
 
   function rangeFileLabel() {
-    return activeRange === "date" ? selectedDate : activeRange;
+    if (activeRange === "date") return selectedDate;
+    if (activeRange === "month") return selectedMonth;
+    if (activeRange === "custom") {
+      const { start, end } = normalizedRangeDates();
+      return `${start}_to_${end}`;
+    }
+    return activeRange;
   }
 
   function closeoutDay() {
@@ -1341,6 +1365,9 @@
   function syncDateInputs() {
     if (el.dateFilter) el.dateFilter.value = selectedDate;
     if (el.dateSearchInput) el.dateSearchInput.value = selectedDate;
+    if (el.monthSearchInput) el.monthSearchInput.value = selectedMonth;
+    if (el.rangeStartInput) el.rangeStartInput.value = rangeStartDate;
+    if (el.rangeEndInput) el.rangeEndInput.value = rangeEndDate;
   }
 
   function applyDateFilter(value) {
@@ -1352,12 +1379,34 @@
     render();
   }
 
+  function applyMonthFilter(value) {
+    if (!value) return;
+    selectedMonth = value;
+    activeRange = "month";
+    document.querySelectorAll("[data-range]").forEach(item => {
+      item.classList.toggle("active", item.dataset.range === "month" && value === todayKey.slice(0, 7));
+    });
+    syncDateInputs();
+    render();
+  }
+
+  function applyCustomRange(startValue, endValue) {
+    if (!startValue || !endValue) return;
+    rangeStartDate = startValue;
+    rangeEndDate = endValue;
+    activeRange = "custom";
+    document.querySelectorAll("[data-range]").forEach(item => item.classList.remove("active"));
+    syncDateInputs();
+    render();
+  }
+
   document.querySelector(".range").addEventListener("click", event => {
     const button = event.target.closest("[data-range]");
     if (!button) return;
     activeRange = button.dataset.range;
     document.querySelectorAll("[data-range]").forEach(item => item.classList.toggle("active", item === button));
     if (activeRange === "today") selectedDate = todayKey;
+    if (activeRange === "month") selectedMonth = todayKey.slice(0, 7);
     syncDateInputs();
     render();
   });
@@ -1379,6 +1428,32 @@
   if (el.dateSearchBtn) {
     el.dateSearchBtn.addEventListener("click", () => {
       applyDateFilter(el.dateSearchInput && el.dateSearchInput.value);
+    });
+  }
+
+  if (el.monthSearchInput) {
+    syncDateInputs();
+    el.monthSearchInput.addEventListener("change", () => {
+      applyMonthFilter(el.monthSearchInput.value);
+    });
+  }
+
+  if (el.monthSearchBtn) {
+    el.monthSearchBtn.addEventListener("click", () => {
+      applyMonthFilter(el.monthSearchInput && el.monthSearchInput.value);
+    });
+  }
+
+  if (el.rangeStartInput || el.rangeEndInput) {
+    syncDateInputs();
+  }
+
+  if (el.rangeSearchBtn) {
+    el.rangeSearchBtn.addEventListener("click", () => {
+      applyCustomRange(
+        el.rangeStartInput && el.rangeStartInput.value,
+        el.rangeEndInput && el.rangeEndInput.value
+      );
     });
   }
 

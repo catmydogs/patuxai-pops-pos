@@ -11,7 +11,7 @@
   <title>Patuxai Pops 后台统计</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260706-pages-workflow">
+  <link rel="stylesheet" href="styles.css?v=20260710-date-ranges">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -53,6 +53,7 @@
     <nav class="range" aria-label="统计范围">
       <button class="active" data-range="today">今天</button>
       <button data-range="7days">近 7 天</button>
+      <button data-range="month">本月</button>
       <button data-range="all">全部</button>
       <label class="date-filter">
         <span>指定日期</span>
@@ -62,12 +63,29 @@
 
     <section class="date-search-panel" aria-label="按日期查询销售数据">
       <div>
-        <strong>查询某一天</strong>
-        <span>选择日期后，首页看板、销售分析、订单和导出都会切换到这一天。</span>
+        <strong>查询日期范围</strong>
+        <span>可以查看某一天、当月，或指定从哪一天到哪一天的数据。</span>
       </div>
-      <div class="date-search-actions">
-        <input id="dateSearchInput" type="date">
+      <div class="date-search-actions date-search-grid">
+        <label>
+          单日
+          <input id="dateSearchInput" type="date">
+        </label>
         <button class="button primary" id="dateSearchBtn" type="button">查看这一天</button>
+        <label>
+          月份
+          <input id="monthSearchInput" type="month">
+        </label>
+        <button class="button" id="monthSearchBtn" type="button">查看这个月</button>
+        <label>
+          开始日期
+          <input id="rangeStartInput" type="date">
+        </label>
+        <label>
+          结束日期
+          <input id="rangeEndInput" type="date">
+        </label>
+        <button class="button primary" id="rangeSearchBtn" type="button">查看日期范围</button>
       </div>
     </section>
 
@@ -236,8 +254,8 @@
 
   <button class="back-top" id="backTop" type="button" aria-label="返回顶部">↑ 顶部</button>
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260706-pages-workflow"></script>
-  <script src="common.js?v=20260706-pages-workflow"></script>
-  <script src="admin.js?v=20260706-pages-workflow"></script>
+  <script src="config.js?v=20260710-date-ranges"></script>
+  <script src="common.js?v=20260710-date-ranges"></script>
+  <script src="admin.js?v=20260710-date-ranges"></script>
 </body>
 </html>

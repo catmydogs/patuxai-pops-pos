@@ -1,5 +1,5 @@
 (function () {
-  const appVersion = "20260710-date-ranges";
+  const appVersion = "20260710-apple-polish";
   const productCatalog = [
     { id: "patuxai-mango-passion", name: "Patuxai - Mango & Passion Fruit", category: "Patuxai Pops", shape: "Patuxai", flavor: "Mango & Passion Fruit", shape_order: 1, flavor_order: 1, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/shapes/shape-patuxai.png", note: "芒果百香果", sort_order: 1 },
     { id: "patuxai-strawberry-milk", name: "Patuxai - Strawberry Milk", category: "Patuxai Pops", shape: "Patuxai", flavor: "Strawberry Milk", shape_order: 1, flavor_order: 2, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/shapes/shape-patuxai.png", note: "草莓牛奶", sort_order: 2 },

@@ -11,7 +11,7 @@
   <title>Patuxai Pops 后台统计</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260710-apple-polish">
+  <link rel="stylesheet" href="styles.css?v=20260712-sales-charts">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -204,6 +204,14 @@
     </section>
 
     <section class="dashboard admin-view" id="analyticsPanel" data-admin-view="analytics">
+      <div class="panel chart-panel wide-panel">
+        <h2>月度销售曲线</h2>
+        <div class="chart-body" id="monthlySalesChart"></div>
+      </div>
+      <div class="panel chart-panel wide-panel">
+        <h2>每日高峰时段</h2>
+        <div class="chart-body" id="dailyPeakChart"></div>
+      </div>
       <div class="panel">
         <h2>冰淇淋销售</h2>
         <div class="list" id="productRanking"></div>
@@ -254,8 +262,8 @@
 
   <button class="back-top" id="backTop" type="button" aria-label="返回顶部">↑ 顶部</button>
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260710-apple-polish"></script>
-  <script src="common.js?v=20260710-apple-polish"></script>
-  <script src="admin.js?v=20260710-apple-polish"></script>
+  <script src="config.js?v=20260712-sales-charts"></script>
+  <script src="common.js?v=20260712-sales-charts"></script>
+  <script src="admin.js?v=20260712-sales-charts"></script>
 </body>
 </html>

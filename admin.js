@@ -51,6 +51,8 @@
     lowStockSkuCount: document.querySelector("#lowStockSkuCount"),
     avgOrder: document.querySelector("#avgOrder"),
     productRanking: document.querySelector("#productRanking"),
+    monthlySalesChart: document.querySelector("#monthlySalesChart"),
+    dailyPeakChart: document.querySelector("#dailyPeakChart"),
     categoryBreakdown: document.querySelector("#categoryBreakdown"),
     paymentSummary: document.querySelector("#paymentSummary"),
     categorySummary: document.querySelector("#categorySummary"),
@@ -290,6 +292,65 @@
     return Number(order.final_amount ?? order.total_amount ?? order.total ?? 0);
   }
 
+  function parseDayParts(day) {
+    const parts = String(day || "").split("-").map(Number);
+    return {
+      year: parts[0] || new Date().getFullYear(),
+      month: parts[1] || 1,
+      date: parts[2] || 1
+    };
+  }
+
+  function weekdayLabel(day) {
+    const parts = parseDayParts(day);
+    const labels = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+    return labels[new Date(parts.year, parts.month - 1, parts.date).getDay()];
+  }
+
+  function monthDays(monthKey) {
+    const [year, month] = String(monthKey || todayKey.slice(0, 7)).split("-").map(Number);
+    const days = new Date(year, month, 0).getDate();
+    return Array.from({ length: days }, (_, index) => `${year}-${String(month).padStart(2, "0")}-${String(index + 1).padStart(2, "0")}`);
+  }
+
+  function rangeDays(startDay, endDay) {
+    const startParts = parseDayParts(startDay);
+    const endParts = parseDayParts(endDay);
+    const start = new Date(startParts.year, startParts.month - 1, startParts.date);
+    const end = new Date(endParts.year, endParts.month - 1, endParts.date);
+    const days = [];
+    for (let date = start; date <= end && days.length < 370; date.setDate(date.getDate() + 1)) {
+      days.push(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`);
+    }
+    return days;
+  }
+
+  function orderHour(order) {
+    const time = String(order.time_text || "");
+    const match = time.match(/(\d{1,2})/);
+    if (match) {
+      const hour = Number(match[1]);
+      if (Number.isFinite(hour) && hour >= 0 && hour <= 23) return hour;
+    }
+    if (order.created_at) {
+      const hour = new Date(order.created_at).getHours();
+      if (Number.isFinite(hour)) return hour;
+    }
+    return 0;
+  }
+
+  function chartMonthKey() {
+    if (activeRange === "month") return selectedMonth;
+    if (activeRange === "date") return selectedDate.slice(0, 7);
+    if (activeRange === "custom") return normalizedRangeDates().start.slice(0, 7);
+    return todayKey.slice(0, 7);
+  }
+
+  function chartDayKey() {
+    if (activeRange === "date") return selectedDate;
+    return selectedDate || todayKey;
+  }
+
   function orderItemSubtotal(order) {
     return (order.order_items || []).reduce((sum, item) => sum + itemSubtotal(item), 0);
   }
@@ -483,6 +544,118 @@
         </section>
       `;
     }).join("");
+  }
+
+  function pointList(points) {
+    return points.map(point => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+  }
+
+  function renderMonthlySalesChart(activeOrders) {
+    if (!el.monthlySalesChart) return;
+    const monthKey = chartMonthKey();
+    const customRange = activeRange === "custom" ? normalizedRangeDates() : null;
+    const days = customRange ? rangeDays(customRange.start, customRange.end) : monthDays(monthKey);
+    const chartLabel = customRange ? `${customRange.start} 至 ${customRange.end}` : monthKey;
+    const byDay = Object.fromEntries(days.map(day => [day, { amount: 0, qty: 0, orders: 0 }]));
+
+    orders.filter(order => POS.isRevenueOrder(order) && byDay[order.day]).forEach(order => {
+      if (!byDay[order.day]) return;
+      byDay[order.day].amount += orderAmount(order);
+      byDay[order.day].orders += 1;
+      byDay[order.day].qty += (order.order_items || []).reduce((sum, item) => sum + itemQty(item), 0);
+    });
+
+    const rows = days.map(day => ({ day, weekday: weekdayLabel(day), ...byDay[day] }));
+    const total = rows.reduce((sum, row) => sum + row.amount, 0);
+    const totalQty = rows.reduce((sum, row) => sum + row.qty, 0);
+    const max = Math.max(...rows.map(row => row.amount), 1);
+    const chartWidth = 920;
+    const chartHeight = 260;
+    const pad = { top: 18, right: 18, bottom: 48, left: 66 };
+    const innerWidth = chartWidth - pad.left - pad.right;
+    const innerHeight = chartHeight - pad.top - pad.bottom;
+    const points = rows.map((row, index) => {
+      const x = pad.left + (rows.length === 1 ? innerWidth / 2 : index * innerWidth / (rows.length - 1));
+      const y = pad.top + innerHeight - (row.amount / max) * innerHeight;
+      return { ...row, x, y };
+    });
+    const peak = rows.reduce((best, row) => row.amount > best.amount ? row : best, rows[0] || { amount: 0, day: monthKey, weekday: "" });
+    const yTicks = [1, 0.5, 0].map(ratio => ({
+      y: pad.top + innerHeight * (1 - ratio),
+      label: POS.money(Math.round(max * ratio))
+    }));
+    const labelEvery = rows.length > 18 ? 5 : rows.length > 12 ? 3 : 1;
+
+    el.monthlySalesChart.innerHTML = `
+      <div class="chart-summary">
+        <div><span>${customRange ? "日期范围" : "月份"}</span><strong>${escapeHtml(chartLabel)}</strong></div>
+        <div><span>销售额</span><strong>${POS.money(total)}</strong></div>
+        <div><span>售出数量</span><strong>${totalQty}</strong></div>
+        <div><span>峰值日期</span><strong>${peak.day.slice(5)} ${peak.weekday} · ${POS.money(peak.amount)}</strong></div>
+      </div>
+      <div class="line-chart-scroll">
+        <svg class="line-chart" viewBox="0 0 ${chartWidth} ${chartHeight}" role="img" aria-label="${escapeHtml(chartLabel)} 销售折线图">
+          ${yTicks.map(tick => `<g><line x1="${pad.left}" x2="${chartWidth - pad.right}" y1="${tick.y}" y2="${tick.y}" class="chart-grid-line"></line><text x="8" y="${tick.y + 4}" class="chart-axis-text">${tick.label}</text></g>`).join("")}
+          <polyline class="sales-line-fill" points="${pointList([{ x: pad.left, y: pad.top + innerHeight }, ...points, { x: chartWidth - pad.right, y: pad.top + innerHeight }])}"></polyline>
+          <polyline class="sales-line" points="${pointList(points)}"></polyline>
+          ${points.map((point, index) => `
+            <g>
+              <circle class="sales-dot ${point.amount === peak.amount && point.amount > 0 ? "peak" : ""}" cx="${point.x}" cy="${point.y}" r="${point.amount === peak.amount && point.amount > 0 ? 5 : 3.5}">
+                <title>${point.day} ${point.weekday}: ${POS.money(point.amount)} · ${point.qty} 件 · ${point.orders} 单</title>
+              </circle>
+              ${index % labelEvery === 0 || index === points.length - 1 ? `<text x="${point.x}" y="${chartHeight - 24}" text-anchor="middle" class="chart-axis-text">${point.day.slice(5)}</text><text x="${point.x}" y="${chartHeight - 9}" text-anchor="middle" class="chart-weekday-text">${point.weekday}</text>` : ""}
+            </g>
+          `).join("")}
+        </svg>
+      </div>
+      <div class="day-chip-grid">
+        ${rows.map(row => `<div class="day-chip ${row.amount ? "active" : ""}"><strong>${row.day.slice(5)} ${row.weekday}</strong><span>${POS.money(row.amount)} · ${row.qty} 件</span></div>`).join("")}
+      </div>
+    `;
+  }
+
+  function renderDailyPeakChart() {
+    if (!el.dailyPeakChart) return;
+    const day = chartDayKey();
+    const rows = Array.from({ length: 24 }, (_, hour) => ({ hour, amount: 0, qty: 0, orders: 0 }));
+    orders.filter(order => POS.isRevenueOrder(order) && order.day === day).forEach(order => {
+      const row = rows[orderHour(order)] || rows[0];
+      row.amount += orderAmount(order);
+      row.orders += 1;
+      row.qty += (order.order_items || []).reduce((sum, item) => sum + itemQty(item), 0);
+    });
+
+    const max = Math.max(...rows.map(row => row.amount), 1);
+    const total = rows.reduce((sum, row) => sum + row.amount, 0);
+    const totalQty = rows.reduce((sum, row) => sum + row.qty, 0);
+    const peak = rows.reduce((best, row) => row.amount > best.amount ? row : best, rows[0]);
+    const peakLabel = peak.amount ? `${String(peak.hour).padStart(2, "0")}:00-${String(peak.hour + 1).padStart(2, "0")}:00` : "暂无";
+
+    el.dailyPeakChart.innerHTML = `
+      <div class="chart-summary">
+        <div><span>日期</span><strong>${escapeHtml(day)} ${weekdayLabel(day)}</strong></div>
+        <div><span>销售额</span><strong>${POS.money(total)}</strong></div>
+        <div><span>售出数量</span><strong>${totalQty}</strong></div>
+        <div><span>高峰时段</span><strong>${peakLabel}${peak.amount ? ` · ${POS.money(peak.amount)}` : ""}</strong></div>
+      </div>
+      <div class="hour-chart" aria-label="${escapeHtml(day)} 每小时销售高峰图">
+        ${rows.map(row => {
+          const height = Math.max(row.amount ? 8 : 2, (row.amount / max) * 150);
+          const label = `${String(row.hour).padStart(2, "0")}:00`;
+          return `
+            <div class="hour-bar ${row.hour === peak.hour && row.amount ? "peak" : ""}">
+              <div class="hour-bar-track">
+                <span style="height:${height}px" title="${label}: ${POS.money(row.amount)} · ${row.qty} 件 · ${row.orders} 单"></span>
+              </div>
+              <strong>${row.hour % 3 === 0 ? row.hour : ""}</strong>
+            </div>
+          `;
+        }).join("")}
+      </div>
+      <div class="hour-detail-grid">
+        ${rows.filter(row => row.amount || row.orders).map(row => `<div><strong>${String(row.hour).padStart(2, "0")}:00-${String(row.hour + 1).padStart(2, "0")}:00</strong><span>${POS.money(row.amount)} · ${row.qty} 件 · ${row.orders} 单</span></div>`).join("") || `<div class="empty">这一天还没有销售记录。</div>`}
+      </div>
+    `;
   }
 
   function activeOrdersForDay(day) {
@@ -746,6 +919,8 @@
     el.avgOrder.textContent = POS.money(activeOrders.length ? Math.round(sales / activeOrders.length) : 0);
 
     renderBars(el.productRanking, iceCreamRows, "当前范围内还没有冰淇淋销售。");
+    renderMonthlySalesChart(activeOrders);
+    renderDailyPeakChart();
     renderCategoryBreakdown(el.categoryBreakdown, categoryStats, categoryProductMaps);
     renderBars(el.paymentSummary, paymentRows, "当前范围内还没有付款记录。");
     renderBars(el.categorySummary, categoryRows, "当前范围内还没有类别数据。");

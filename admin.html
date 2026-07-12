@@ -11,7 +11,7 @@
   <title>Patuxai Pops 后台统计</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260712-sales-charts">
+  <link rel="stylesheet" href="styles.css?v=20260713-operations-dashboard">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -118,6 +118,10 @@
         <strong>订单明细</strong>
         <span>查询、取消订单</span>
       </a>
+      <a href="#businessDayPanel" data-admin-nav="business">
+        <strong>营业记录</strong>
+        <span>时间、天气、活动</span>
+      </a>
     </nav>
 
     <nav class="product-filters admin-filter-panel" id="productFilters" aria-label="产品筛选">
@@ -128,20 +132,17 @@
     </nav>
 
     <section class="stats admin-view" data-admin-view="home" aria-label="汇总">
-      <div class="card"><span>销售额</span><strong id="salesTotal">0 KIP</strong></div>
-      <div class="card"><span>订单数</span><strong id="orderCount">0</strong></div>
-      <div class="card"><span>客单价</span><strong id="avgOrder">0 KIP</strong></div>
-      <div class="card"><span>总售出数量</span><strong id="itemCount">0</strong></div>
+      <div class="card"><span>销售额</span><strong id="salesTotal">0 KIP</strong><small id="salesTotalCompare"></small></div>
+      <div class="card"><span>订单数</span><strong id="orderCount">0</strong><small id="orderCountCompare"></small></div>
+      <div class="card"><span>销售件数</span><strong id="itemCount">0</strong><small id="itemCountCompare"></small></div>
+      <div class="card"><span>客单价</span><strong id="avgOrder">0 KIP</strong><small id="avgOrderCompare"></small></div>
+      <div class="card"><span>每单平均件数</span><strong id="avgItemsPerOrder">0</strong><small id="avgItemsCompare"></small></div>
+      <div class="card"><span>单件订单占比</span><strong id="singleItemOrderRate">0%</strong><small id="singleItemCompare"></small></div>
       <div class="card"><span>冰淇淋数量</span><strong id="iceCreamItemCount">0</strong></div>
-      <div class="card"><span>定制服务数量</span><strong id="customItemCount">0</strong></div>
-      <div class="card"><span>周边产品数量</span><strong id="merchItemCount">0</strong></div>
-      <div class="card"><span>饮品数量</span><strong id="drinkItemCount">0</strong></div>
-      <div class="card"><span>套餐数量</span><strong id="bundleItemCount">0</strong></div>
-      <div class="card"><span>其他产品数量</span><strong id="otherItemCount">0</strong></div>
-      <div class="card"><span>现金销售</span><strong id="cashSales">0 KIP</strong></div>
-      <div class="card"><span>扫码销售</span><strong id="qrSales">0 KIP</strong></div>
-      <div class="card"><span>其他支付销售</span><strong id="otherPaymentSales">0 KIP</strong></div>
-      <div class="card"><span>现金差额</span><strong id="cashDifference">0 KIP</strong></div>
+      <div class="card"><span>文创商品数量</span><strong id="merchItemCount">0</strong></div>
+      <div class="card"><span>冰淇淋＋文创混合订单</span><strong id="mixedOrderRate">0%</strong></div>
+      <div class="card"><span>取消 / 退款</span><strong id="cancelRefundSummary">0 / 0 KIP</strong></div>
+      <div class="card payment-card"><span>支付方式收款</span><strong id="cashSales">现金 0 KIP</strong><small id="paymentDetail">扫码 0 KIP · 其他 0 KIP</small></div>
       <div class="card"><span>低库存 SKU</span><strong id="lowStockSkuCount">0</strong></div>
     </section>
 
@@ -175,12 +176,20 @@
         <label>
           分类
           <select class="field-input" name="category" required>
-            <option value="custom">定制服务</option>
-            <option value="merch">周边产品</option>
-            <option value="drink">饮品</option>
-            <option value="bundle">套餐</option>
+            <option value="merchandise">文创商品</option>
+            <option value="beverage">饮料</option>
+            <option value="service">定制服务</option>
+            <option value="deposit">订金</option>
             <option value="other">其他产品</option>
           </select>
+        </label>
+        <label>
+          SKU
+          <input class="field-input" name="sku" placeholder="例如 PP-MER-KEY-01">
+        </label>
+        <label>
+          系列
+          <input class="field-input" name="series" placeholder="例如 Patuxai 文创">
         </label>
         <label>
           售价 KIP
@@ -194,6 +203,10 @@
           低库存提醒
           <input class="field-input" name="low_stock_threshold" type="number" min="0" step="1" value="10" required>
         </label>
+        <label class="soldout-check">
+          <input name="track_inventory" type="checkbox" checked>
+          跟踪库存
+        </label>
         <label>
           说明
           <input class="field-input" name="note" placeholder="可选">
@@ -204,6 +217,16 @@
     </section>
 
     <section class="dashboard admin-view" id="analyticsPanel" data-admin-view="analytics">
+      <div class="panel chart-panel wide-panel">
+        <h2>时段经营表现</h2>
+        <div class="metric-switch" id="hourMetricSwitch">
+          <button class="active" type="button" data-hour-metric="amount">销售额</button>
+          <button type="button" data-hour-metric="orders">订单数</button>
+          <button type="button" data-hour-metric="qty">商品件数</button>
+          <button type="button" data-hour-metric="avg">客单价</button>
+        </div>
+        <div class="chart-body" id="operationsHourChart"></div>
+      </div>
       <div class="panel chart-panel wide-panel">
         <h2>月度销售曲线</h2>
         <div class="chart-body" id="monthlySalesChart"></div>
@@ -227,6 +250,14 @@
       <div class="panel">
         <h2>类别销售</h2>
         <div class="list" id="categorySummary"></div>
+      </div>
+      <div class="panel wide-panel">
+        <h2>商品表现与需求</h2>
+        <div class="product-performance" id="productPerformance"></div>
+      </div>
+      <div class="panel wide-panel alert-panel">
+        <h2>经营异常提醒</h2>
+        <div class="alert-list" id="operationsAlerts"></div>
       </div>
     </section>
 
@@ -258,12 +289,27 @@
         <tbody id="ordersBody"></tbody>
       </table>
     </section>
+
+    <section class="panel anchor-panel admin-view" id="businessDayPanel" data-admin-view="business">
+      <h2>每日营业记录</h2>
+      <form class="business-day-form" id="businessDayForm">
+        <label>日期<input class="field-input" name="day" type="date" required></label>
+        <label>计划开门<input class="field-input" name="planned_open_time" type="time"></label>
+        <label>计划收摊<input class="field-input" name="planned_close_time" type="time"></label>
+        <label>天气<input class="field-input" name="weather" placeholder="晴 / 雨 / 高温"></label>
+        <label>活动<input class="field-input" name="activity" placeholder="市集、节日、团购等"></label>
+        <label class="business-note">异常与说明<input class="field-input" name="exception_note" placeholder="晚开、提前收摊、设备故障等"></label>
+        <label>状态<select class="field-input" name="status"><option value="open">营业中</option><option value="closed">已结束</option><option value="planned">计划营业</option><option value="cancelled">取消营业</option></select></label>
+        <button class="button primary" type="submit">保存营业记录</button>
+      </form>
+      <div class="list" id="businessDayHistory"></div>
+    </section>
   </main>
 
   <button class="back-top" id="backTop" type="button" aria-label="返回顶部">↑ 顶部</button>
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260712-sales-charts"></script>
-  <script src="common.js?v=20260712-sales-charts"></script>
-  <script src="admin.js?v=20260712-sales-charts"></script>
+  <script src="config.js?v=20260713-operations-dashboard"></script>
+  <script src="common.js?v=20260713-operations-dashboard"></script>
+  <script src="admin.js?v=20260713-operations-dashboard"></script>
 </body>
 </html>

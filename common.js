@@ -1,5 +1,5 @@
 (function () {
-  const appVersion = "20260712-sales-charts";
+  const appVersion = "20260713-operations-dashboard";
   const productCatalog = [
     { id: "patuxai-mango-passion", name: "Patuxai - Mango & Passion Fruit", category: "Patuxai Pops", shape: "Patuxai", flavor: "Mango & Passion Fruit", shape_order: 1, flavor_order: 1, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/shapes/shape-patuxai.png", note: "芒果百香果", sort_order: 1 },
     { id: "patuxai-strawberry-milk", name: "Patuxai - Strawberry Milk", category: "Patuxai Pops", shape: "Patuxai", flavor: "Strawberry Milk", shape_order: 1, flavor_order: 2, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/shapes/shape-patuxai.png", note: "草莓牛奶", sort_order: 2 },
@@ -304,25 +304,26 @@
     return `${Number(value || 0).toLocaleString("en-US")} KIP`;
   }
 
-  const standardCategories = ["icecream", "custom", "merch", "drink", "bundle", "other"];
+  const standardCategories = ["icecream", "merchandise", "beverage", "service", "deposit", "other"];
 
   function normalizeCategory(value) {
     const text = String(value || "").trim().toLowerCase();
     if (["icecream", "ice cream", "patuxai pops"].includes(text)) return "icecream";
-    if (["custom", "custom service", "定制服务"].includes(text)) return "custom";
-    if (["merch", "souvenir", "merchandise", "周边产品", "文创纪念品"].includes(text)) return "merch";
-    if (["drink", "饮品"].includes(text)) return "drink";
-    if (["bundle", "combo", "套餐"].includes(text)) return "bundle";
+    if (["custom", "custom service", "service", "定制服务"].includes(text)) return "service";
+    if (["merch", "souvenir", "merchandise", "周边产品", "文创纪念品"].includes(text)) return "merchandise";
+    if (["drink", "beverage", "饮品"].includes(text)) return "beverage";
+    if (["deposit", "订金"].includes(text)) return "deposit";
+    if (["bundle", "combo", "套餐"].includes(text)) return "other";
     return "other";
   }
 
   function categoryLabel(category) {
     const labels = {
       icecream: "冰淇淋",
-      custom: "定制服务",
-      merch: "周边产品",
-      drink: "饮品",
-      bundle: "套餐",
+      merchandise: "文创商品",
+      beverage: "饮料",
+      service: "定制服务",
+      deposit: "订金",
       other: "其他产品"
     };
     return labels[normalizeCategory(category)] || "其他产品";
@@ -353,15 +354,28 @@
   }
 
   function normalizeProduct(product) {
-    const category = normalizeCategory(product && product.category);
-    const price = Number(product && (product.selling_price ?? product.price) || 0);
+    const category = normalizeCategory(product && (product.product_type || product.category));
+    const price = Number(product && (product.sale_price ?? product.selling_price ?? product.price) || 0);
     return {
       ...(product || {}),
       category,
+      product_type: category,
       category_label: categoryLabel(category),
       subcategory: product && product.subcategory ? product.subcategory : product && product.shape ? product.shape : "",
       selling_price: price,
+      sale_price: price,
       price,
+      product_id: product && product.product_id ? product.product_id : product && product.id,
+      has_stable_product_id: Boolean(product && product.product_id),
+      sku: product && product.sku ? product.sku : product && product.id,
+      short_name: product && product.short_name ? product.short_name : product && (product.note || product.name),
+      series: product && product.series ? product.series : "",
+      size: product && product.size ? product.size : "",
+      unit: product && product.unit ? product.unit : "件",
+      display_order: Number(product && (product.display_order ?? product.sort_order) || 0),
+      image_url: product && (product.image_url || product.image_path),
+      is_available: product && product.is_available !== undefined ? product.is_available : !(product && product.sold_out),
+      track_inventory: product && product.track_inventory !== undefined ? product.track_inventory : true,
       low_stock_threshold: Number(product && product.low_stock_threshold || lowStockThreshold)
     };
   }

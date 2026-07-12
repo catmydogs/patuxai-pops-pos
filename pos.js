@@ -19,12 +19,19 @@
   let checkoutInFlight = false;
   let clearConfirmTimer = null;
 
+  function isProductUnavailable(product) {
+    if (!product || product.is_active === false || product.is_available === false) return true;
+    if (product.track_inventory === false) return false;
+    return product.sold_out || product.stock <= 0;
+  }
+
   const el = {
     todayText: document.querySelector("#todayText"),
     categoryTabs: document.querySelector("#categoryTabs"),
     productGrid: document.querySelector("#productGrid"),
     searchInput: document.querySelector("#searchInput"),
     cartList: document.querySelector("#cartList"),
+    upsellHint: document.querySelector("#upsellHint"),
     cartCount: document.querySelector("#cartCount"),
     subtotal: document.querySelector("#subtotal"),
     discountText: document.querySelector("#discountText"),
@@ -84,8 +91,8 @@
   function normalizeCart(rawCart) {
     return (rawCart || []).map(line => {
       const product = products.find(item => item.id === line.product_id);
-      if (!product || product.is_active === false || product.sold_out || product.stock <= 0) return null;
-      const qty = Math.min(Number(line.qty || 1), product.stock);
+      if (isProductUnavailable(product)) return null;
+      const qty = product.track_inventory === false ? Number(line.qty || 1) : Math.min(Number(line.qty || 1), product.stock);
       if (qty <= 0) return null;
       const itemType = line.item_type || "sale";
       return {
@@ -219,6 +226,9 @@
       discount_amount: totals.discount,
       final_amount: totals.total,
       status: "pending",
+      is_test: false,
+      promotion_code: "",
+      promotion_note: totals.discount > 0 ? `订单折扣 ${totals.discount}` : "",
       order_items: cart.map(item => ({
         product_id: item.product_id,
         name: item.name,
@@ -395,10 +405,10 @@
   }
 
   function productCard(product, mode) {
-    const isUnavailable = product.sold_out || product.stock <= 0;
+    const isUnavailable = isProductUnavailable(product);
     const disabled = isUnavailable ? "disabled" : "";
-    const low = product.stock <= (product.low_stock_threshold || lowStockThreshold) || product.sold_out ? "low" : "";
-    const stockText = isUnavailable ? "售罄" : `库存 ${product.stock}`;
+    const low = product.track_inventory !== false && (product.stock <= (product.low_stock_threshold || lowStockThreshold) || product.sold_out) ? "low" : "";
+    const stockText = product.track_inventory === false ? "无需库存" : isUnavailable ? "售罄" : `库存 ${product.stock}`;
     const image = product.image_path ? `<img class="product-image" src="${assetUrl(product.image_path)}" alt="${product.name}">` : "";
     const compact = mode === "compact";
     if (compact) {
@@ -486,10 +496,10 @@
             ${flavors.map(flavor => {
               const product = matrixProducts.find(item => item.shape === shape.name && item.flavor === flavor.name);
               if (!product || !matches(product)) return `<div class="sku-empty"></div>`;
-              const isUnavailable = product.sold_out || product.stock <= 0;
+              const isUnavailable = isProductUnavailable(product);
               const disabled = isUnavailable ? "disabled" : "";
-              const low = product.stock <= (product.low_stock_threshold || lowStockThreshold) || product.sold_out ? "low" : "";
-              const stockText = isUnavailable ? "售罄" : `库存 ${product.stock}`;
+              const low = product.track_inventory !== false && (product.stock <= (product.low_stock_threshold || lowStockThreshold) || product.sold_out) ? "low" : "";
+              const stockText = product.track_inventory === false ? "无需库存" : isUnavailable ? "售罄" : `库存 ${product.stock}`;
               return `
                 <button class="sku-cell ${low}" data-id="${product.id}" ${skuCellStyle(product.flavor)} ${disabled}>
                   <span>${product.note || product.flavor}</span>
@@ -539,10 +549,10 @@
 
   function addToCart(productId) {
     const product = products.find(item => item.id === productId);
-    if (!product || product.sold_out || product.stock <= 0) return null;
+    if (isProductUnavailable(product)) return null;
     const existing = cart.find(item => item.product_id === productId);
     if (existing) {
-      if (existing.qty >= product.stock) {
+      if (product.track_inventory !== false && existing.qty >= product.stock) {
         POS.showToast("已达到当前库存数量");
         return null;
       }
@@ -607,8 +617,40 @@
     if (el.discountText) el.discountText.textContent = totals.discount ? `-${POS.money(totals.discount)}` : POS.money(0);
     el.grandTotal.textContent = POS.money(totals.total);
     el.checkoutBtn.disabled = checkoutInFlight || cart.length === 0 || totals.total <= 0;
+    renderUpsellHint();
     updateCashPresets(totals.total);
     updateChange();
+  }
+
+  function renderUpsellHint() {
+    if (!el.upsellHint) return;
+    if (!cart.length) {
+      el.upsellHint.hidden = true;
+      el.upsellHint.innerHTML = "";
+      return;
+    }
+    const categories = new Set(cart.map(item => POS.normalizeCategory(item.category)));
+    let targetCategory = "";
+    let message = "";
+    if (categories.has("icecream") && !categories.has("merchandise")) {
+      targetCategory = "merchandise";
+      message = "可以顺带推荐一款文创商品";
+    } else if (categories.has("merchandise") && !categories.has("icecream")) {
+      targetCategory = "icecream";
+      message = "可以搭配一支冰淇淋";
+    }
+    const candidate = products.find(product =>
+      (!targetCategory || product.category === targetCategory) &&
+      !cart.some(item => item.product_id === product.id) &&
+      !isProductUnavailable(product)
+    );
+    if (!candidate || !message) {
+      el.upsellHint.hidden = true;
+      el.upsellHint.innerHTML = "";
+      return;
+    }
+    el.upsellHint.hidden = false;
+    el.upsellHint.innerHTML = `<div><span>${message}</span><strong>${productLabel(candidate)} · ${POS.money(candidate.selling_price)}</strong></div><button type="button" data-upsell="${candidate.id}">加入</button>`;
   }
 
   function updateCart(lineId, action) {
@@ -623,7 +665,7 @@
       item.price = isGift ? Number(item.selling_price || item.price || 0) : 0;
     }
     const product = products.find(productItem => productItem.id === item.product_id);
-    if (product && item.qty > product.stock) {
+    if (product && product.track_inventory !== false && item.qty > product.stock) {
       item.qty = product.stock;
       POS.showToast("已达到当前库存数量");
     }
@@ -801,6 +843,15 @@
     activeCategory = button.dataset.category;
     renderAll();
   });
+
+  if (el.upsellHint) {
+    el.upsellHint.addEventListener("click", event => {
+      const button = event.target.closest("[data-upsell]");
+      if (!button) return;
+      const product = addToCart(button.dataset.upsell);
+      if (product) POS.showToast(`已加入 ${productLabel(product)}`);
+    });
+  }
 
   el.productGrid.addEventListener("click", event => {
     const button = event.target.closest("[data-id]");

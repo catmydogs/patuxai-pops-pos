@@ -24,6 +24,8 @@
   let orders = [];
   let closeouts = [];
   let inventoryMovements = [];
+  let businessDays = [];
+  let activeHourMetric = "amount";
 
   const el = {
     rangeText: document.querySelector("#rangeText"),
@@ -50,9 +52,24 @@
     cashDifference: document.querySelector("#cashDifference"),
     lowStockSkuCount: document.querySelector("#lowStockSkuCount"),
     avgOrder: document.querySelector("#avgOrder"),
+    salesTotalCompare: document.querySelector("#salesTotalCompare"),
+    orderCountCompare: document.querySelector("#orderCountCompare"),
+    itemCountCompare: document.querySelector("#itemCountCompare"),
+    avgOrderCompare: document.querySelector("#avgOrderCompare"),
+    avgItemsPerOrder: document.querySelector("#avgItemsPerOrder"),
+    avgItemsCompare: document.querySelector("#avgItemsCompare"),
+    singleItemOrderRate: document.querySelector("#singleItemOrderRate"),
+    singleItemCompare: document.querySelector("#singleItemCompare"),
+    mixedOrderRate: document.querySelector("#mixedOrderRate"),
+    cancelRefundSummary: document.querySelector("#cancelRefundSummary"),
+    paymentDetail: document.querySelector("#paymentDetail"),
     productRanking: document.querySelector("#productRanking"),
     monthlySalesChart: document.querySelector("#monthlySalesChart"),
     dailyPeakChart: document.querySelector("#dailyPeakChart"),
+    operationsHourChart: document.querySelector("#operationsHourChart"),
+    hourMetricSwitch: document.querySelector("#hourMetricSwitch"),
+    productPerformance: document.querySelector("#productPerformance"),
+    operationsAlerts: document.querySelector("#operationsAlerts"),
     categoryBreakdown: document.querySelector("#categoryBreakdown"),
     paymentSummary: document.querySelector("#paymentSummary"),
     categorySummary: document.querySelector("#categorySummary"),
@@ -73,7 +90,9 @@
     testConnection: document.querySelector("#testConnection"),
     productFilters: document.querySelector("#productFilters"),
     adminShortcuts: document.querySelector("#adminShortcuts"),
-    backTop: document.querySelector("#backTop")
+    backTop: document.querySelector("#backTop"),
+    businessDayForm: document.querySelector("#businessDayForm"),
+    businessDayHistory: document.querySelector("#businessDayHistory")
   };
 
   if (el.menuEditor) {
@@ -93,7 +112,8 @@
     stockManagement: "stock",
     inventoryMovementsPanel: "inventory",
     closeoutPanel: "closeout",
-    ordersPanel: "orders"
+    ordersPanel: "orders",
+    businessDayPanel: "business"
   };
 
   function currentAdminView() {
@@ -208,7 +228,7 @@
     try {
       let ordersResult = await client
         .from("orders")
-        .select("id, day, time_text, payment_method, total, total_amount, discount_amount, final_amount, status, cashier, note, created_at, order_items(product_id, name, product_name, category, subcategory, qty, quantity, price, unit_price, subtotal, item_type)")
+        .select("id, day, time_text, payment_method, total, total_amount, discount_amount, final_amount, status, cashier, note, created_at, is_test, promotion_code, promotion_note, cancel_reason, cancelled_at, refund_amount, order_items(product_id, product_uid, name, product_name, category, product_type, subcategory, qty, quantity, price, unit_price, subtotal, item_type, promotion_code, gift_reason)")
         .order("created_at", { ascending: false });
       if (ordersResult.error && /column|schema cache|relationship|select/i.test(ordersResult.error.message || "")) {
         ordersResult = await client
@@ -245,6 +265,17 @@
     } catch (error) {
       inventoryMovements = [];
       issues.push("库存记录");
+    }
+
+    try {
+      const businessDaysResult = await client
+        .from("business_days")
+        .select("*")
+        .order("day", { ascending: false });
+      if (businessDaysResult.error) throw businessDaysResult.error;
+      businessDays = businessDaysResult.data || [];
+    } catch (error) {
+      businessDays = [];
     }
 
     if (issues.length) {
@@ -364,7 +395,7 @@
   }
 
   function itemCategory(item, product) {
-    return POS.normalizeCategory(item.category || (product && product.category));
+    return POS.normalizeCategory(item.product_type || item.category || (product && (product.product_type || product.category)));
   }
 
   function statusLabel(status) {
@@ -381,7 +412,7 @@
 
   function makeProductId(name, category) {
     const normalized = POS.normalizeCategory(category);
-    const prefix = normalized === "custom" ? "custom" : normalized === "merch" ? "merch" : normalized;
+    const prefix = normalized === "service" ? "service" : normalized === "merchandise" ? "merch" : normalized;
     const suffix = String(name || "item")
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
@@ -399,7 +430,7 @@
       return currentProducts.filter(product => product.is_active === false);
     }
     if (activeProductFilter === "low") {
-      return currentProducts.filter(product => product.stock <= (product.low_stock_threshold || lowStockThreshold) || product.sold_out);
+      return currentProducts.filter(product => product.track_inventory !== false && (product.stock <= (product.low_stock_threshold || lowStockThreshold) || product.sold_out));
     }
     return currentProducts;
   }
@@ -408,8 +439,8 @@
     if (!el.stockOverview) return;
     const activeProducts = products.filter(product => isCurrentMenuProduct(product) && product.is_active !== false);
     const totalStock = activeProducts.reduce((sum, product) => sum + Number(product.stock || 0), 0);
-    const lowCount = activeProducts.filter(product => product.stock <= (product.low_stock_threshold || lowStockThreshold) || product.sold_out).length;
-    const soldOutCount = activeProducts.filter(product => product.sold_out || product.stock <= 0).length;
+    const lowCount = activeProducts.filter(product => product.track_inventory !== false && (product.stock <= (product.low_stock_threshold || lowStockThreshold) || product.sold_out)).length;
+    const soldOutCount = activeProducts.filter(product => product.is_available === false || (product.track_inventory !== false && (product.sold_out || product.stock <= 0))).length;
 
     el.stockOverview.innerHTML = `
       <div class="stock-metric">
@@ -453,7 +484,8 @@
   }
 
   function filteredOrders(includeVoid) {
-    const base = includeVoid ? orders : orders.filter(POS.isRevenueOrder);
+    const officialOrders = orders.filter(order => order.is_test !== true);
+    const base = includeVoid ? officialOrders : officialOrders.filter(POS.isRevenueOrder);
     return base.filter(order => inActiveDateRange(order.day));
   }
 
@@ -558,7 +590,7 @@
     const chartLabel = customRange ? `${customRange.start} 至 ${customRange.end}` : monthKey;
     const byDay = Object.fromEntries(days.map(day => [day, { amount: 0, qty: 0, orders: 0 }]));
 
-    orders.filter(order => POS.isRevenueOrder(order) && byDay[order.day]).forEach(order => {
+    orders.filter(order => order.is_test !== true && POS.isRevenueOrder(order) && byDay[order.day]).forEach(order => {
       if (!byDay[order.day]) return;
       byDay[order.day].amount += orderAmount(order);
       byDay[order.day].orders += 1;
@@ -618,7 +650,7 @@
     if (!el.dailyPeakChart) return;
     const day = chartDayKey();
     const rows = Array.from({ length: 24 }, (_, hour) => ({ hour, amount: 0, qty: 0, orders: 0 }));
-    orders.filter(order => POS.isRevenueOrder(order) && order.day === day).forEach(order => {
+    orders.filter(order => order.is_test !== true && POS.isRevenueOrder(order) && order.day === day).forEach(order => {
       const row = rows[orderHour(order)] || rows[0];
       row.amount += orderAmount(order);
       row.orders += 1;
@@ -659,7 +691,184 @@
   }
 
   function activeOrdersForDay(day) {
-    return orders.filter(order => order.day === day && POS.isRevenueOrder(order));
+    return orders.filter(order => order.day === day && order.is_test !== true && POS.isRevenueOrder(order));
+  }
+
+  function shiftDay(day, offset) {
+    const parts = parseDayParts(day);
+    const date = new Date(parts.year, parts.month - 1, parts.date);
+    date.setDate(date.getDate() + offset);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  }
+
+  function metricsForOrders(sourceOrders) {
+    const paid = (sourceOrders || []).filter(order => order.is_test !== true && POS.isRevenueOrder(order));
+    const sales = paid.reduce((sum, order) => sum + orderAmount(order), 0);
+    const quantities = paid.map(order => (order.order_items || []).reduce((sum, item) => sum + itemQty(item), 0));
+    const items = quantities.reduce((sum, qty) => sum + qty, 0);
+    const singleOrders = quantities.filter(qty => qty === 1).length;
+    return {
+      sales,
+      orders: paid.length,
+      items,
+      avgOrder: paid.length ? sales / paid.length : 0,
+      avgItems: paid.length ? items / paid.length : 0,
+      singleRate: paid.length ? singleOrders / paid.length : 0
+    };
+  }
+
+  function operatingDayMetrics(beforeDay, limit) {
+    const days = [...new Set(orders
+      .filter(order => order.day < beforeDay && order.is_test !== true && POS.isRevenueOrder(order))
+      .map(order => order.day))]
+      .sort()
+      .reverse()
+      .slice(0, limit);
+    if (!days.length) return null;
+    const daily = days.map(day => metricsForOrders(orders.filter(order => order.day === day)));
+    const average = key => daily.reduce((sum, row) => sum + row[key], 0) / daily.length;
+    return {
+      sales: average("sales"),
+      orders: average("orders"),
+      items: average("items"),
+      avgOrder: average("avgOrder"),
+      avgItems: average("avgItems"),
+      singleRate: average("singleRate")
+    };
+  }
+
+  function deltaLabel(current, comparison, label, percentMetric) {
+    if (!comparison && comparison !== 0) return `${label}暂无数据`;
+    if (comparison === 0) return current === 0 ? `${label}持平` : `${label}新增`;
+    const delta = ((current - comparison) / Math.abs(comparison)) * 100;
+    const sign = delta > 0 ? "+" : "";
+    return `${label}${sign}${delta.toFixed(1)}%${percentMetric ? "" : ""}`;
+  }
+
+  function renderMetricComparisons(summaryDay, currentMetrics) {
+    const yesterday = metricsForOrders(orders.filter(order => order.day === shiftDay(summaryDay, -1)));
+    const previousWeek = metricsForOrders(orders.filter(order => order.day === shiftDay(summaryDay, -7)));
+    const average7 = operatingDayMetrics(summaryDay, 7);
+    const average30 = operatingDayMetrics(summaryDay, 30);
+    const comparisonText = key => [
+      deltaLabel(currentMetrics[key], yesterday[key], "较昨日 "),
+      deltaLabel(currentMetrics[key], previousWeek[key], "较上周同日 "),
+      average7 ? deltaLabel(currentMetrics[key], average7[key], "较7营业日均值 ") : "7日均值暂无",
+      average30 ? deltaLabel(currentMetrics[key], average30[key], "较30营业日均值 ") : "30日均值暂无"
+    ].map(text => `<span>${escapeHtml(text)}</span>`).join("");
+    if (el.salesTotalCompare) el.salesTotalCompare.innerHTML = comparisonText("sales");
+    if (el.orderCountCompare) el.orderCountCompare.innerHTML = comparisonText("orders");
+    if (el.itemCountCompare) el.itemCountCompare.innerHTML = comparisonText("items");
+    if (el.avgOrderCompare) el.avgOrderCompare.innerHTML = comparisonText("avgOrder");
+    if (el.avgItemsCompare) el.avgItemsCompare.innerHTML = comparisonText("avgItems");
+    if (el.singleItemCompare) el.singleItemCompare.innerHTML = comparisonText("singleRate");
+  }
+
+  function renderOperationsHourChart(activeOrders) {
+    if (!el.operationsHourChart) return;
+    const rows = Array.from({ length: 24 }, (_, hour) => ({ hour, amount: 0, orders: 0, qty: 0, avg: 0 }));
+    activeOrders.forEach(order => {
+      const row = rows[orderHour(order)];
+      row.amount += orderAmount(order);
+      row.orders += 1;
+      row.qty += (order.order_items || []).reduce((sum, item) => sum + itemQty(item), 0);
+    });
+    rows.forEach(row => { row.avg = row.orders ? row.amount / row.orders : 0; });
+    const max = Math.max(...rows.map(row => row[activeHourMetric]), 1);
+    const labels = { amount: "销售额", orders: "订单数", qty: "商品件数", avg: "客单价" };
+    const format = value => ["amount", "avg"].includes(activeHourMetric) ? POS.money(Math.round(value)) : `${Math.round(value)}`;
+    const periodClass = hour => hour >= 11 && hour < 15 ? "lunch" : hour >= 15 && hour < 17 ? "afternoon" : hour >= 17 && hour < 22 ? "evening" : "off-hours";
+    const peak = rows.reduce((best, row) => row[activeHourMetric] > best[activeHourMetric] ? row : best, rows[0]);
+    el.operationsHourChart.innerHTML = `
+      <div class="chart-summary compact-summary">
+        <div><span>当前指标</span><strong>${labels[activeHourMetric]}</strong></div>
+        <div><span>峰值时段</span><strong>${String(peak.hour).padStart(2, "0")}:00 · ${format(peak[activeHourMetric])}</strong></div>
+        <div><span>重点时段</span><strong>11:00–21:59</strong></div>
+      </div>
+      <div class="hour-chart operations-hour-chart">
+        ${rows.map(row => {
+          const height = Math.max(row[activeHourMetric] ? 8 : 2, row[activeHourMetric] / max * 150);
+          return `<div class="hour-bar ${periodClass(row.hour)} ${row.hour === peak.hour && row[activeHourMetric] ? "peak" : ""}">
+            <div class="hour-bar-track"><span style="height:${height}px" title="${String(row.hour).padStart(2, "0")}:00 ${format(row[activeHourMetric])}"></span></div>
+            <strong>${row.hour % 2 === 0 ? row.hour : ""}</strong>
+          </div>`;
+        }).join("")}
+      </div>
+      <div class="period-legend"><span class="lunch">11–14 午间</span><span class="afternoon">15–16 下午</span><span class="evening">17–21 晚间</span></div>
+    `;
+  }
+
+  function renderProductPerformance(activeOrders) {
+    if (!el.productPerformance) return;
+    const sold = new Map();
+    activeOrders.forEach(order => (order.order_items || []).forEach(item => {
+      const product = productById(item.product_id);
+      const key = item.product_id || item.product_uid || item.product_name || item.name;
+      const current = sold.get(key) || { name: item.product_name || item.name || "商品", qty: 0, amount: 0, flavor: (product && product.flavor) || "" };
+      current.qty += itemQty(item);
+      current.amount += itemNetSubtotal(order, item);
+      sold.set(key, current);
+    }));
+    const ranking = [...sold.values()].sort((a, b) => b.qty - a.qty).slice(0, 8);
+    const flavors = new Map();
+    products.filter(product => product.product_type === "icecream" || product.category === "icecream").forEach(product => {
+      const key = product.flavor || product.note || "未填写口味";
+      const current = flavors.get(key) || { qty: 0, stock: 0 };
+      current.stock += Number(product.stock || 0);
+      flavors.set(key, current);
+    });
+    sold.forEach(row => {
+      if (!row.flavor) return;
+      const current = flavors.get(row.flavor) || { qty: 0, stock: 0 };
+      current.qty += row.qty;
+      flavors.set(row.flavor, current);
+    });
+    const soldOut = products.filter(product => product.is_active !== false && (product.is_available === false || (product.track_inventory !== false && (product.sold_out || product.stock <= 0))));
+    const lastSale = new Map();
+    orders.filter(order => order.is_test !== true && POS.isRevenueOrder(order)).forEach(order => (order.order_items || []).forEach(item => {
+      const previous = lastSale.get(item.product_id);
+      if (!previous || order.day > previous) lastSale.set(item.product_id, order.day);
+    }));
+    const todayDate = new Date(`${todayKey}T00:00:00`);
+    const noSales = products.filter(product => product.is_active !== false).map(product => {
+      const lastDay = lastSale.get(product.id);
+      const days = lastDay ? Math.floor((todayDate - new Date(`${lastDay}T00:00:00`)) / 86400000) : null;
+      return { product, lastDay, days };
+    }).filter(row => row.days === null || row.days >= 3).sort((a, b) => (b.days ?? 9999) - (a.days ?? 9999));
+    const newProducts = products.filter(product => {
+      if (!product.created_at) return false;
+      return (Date.now() - new Date(product.created_at).getTime()) / 86400000 <= 30;
+    });
+    el.productPerformance.innerHTML = `
+      <section><h3>销量排名</h3>${ranking.length ? ranking.map((row, index) => `<div class="performance-row"><span>${index + 1}. ${escapeHtml(row.name)}</span><strong>${row.qty} 件 · ${POS.money(row.amount)}</strong></div>`).join("") : `<div class="empty">当前范围暂无销售。</div>`}</section>
+      <section><h3>口味销量 / 当前库存</h3>${[...flavors.entries()].map(([name, row]) => `<div class="performance-row"><span>${escapeHtml(name)}</span><strong>${row.qty} / ${row.stock}</strong></div>`).join("") || `<div class="empty">暂无口味数据。</div>`}</section>
+      <section><h3>当前售罄</h3>${soldOut.length ? soldOut.slice(0, 10).map(product => `<div class="performance-row danger"><span>${escapeHtml(productDisplayName(product))}</span><strong>${product.sold_out_at ? new Date(product.sold_out_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "时间待记录"}</strong></div>`).join("") : `<div class="empty">当前没有售罄商品。</div>`}</section>
+      <section><h3>连续无销售</h3>${noSales.length ? noSales.slice(0, 10).map(row => `<div class="performance-row"><span>${escapeHtml(productDisplayName(row.product))}</span><strong>${row.days === null ? "从未销售" : `${row.days} 天`}</strong></div>`).join("") : `<div class="empty">没有连续 3 天无销售商品。</div>`}</section>
+      <section><h3>近 30 天新品</h3>${newProducts.length ? newProducts.slice(0, 10).map(product => { const row = sold.get(product.id) || { qty: 0, amount: 0 }; return `<div class="performance-row"><span>${escapeHtml(productDisplayName(product))}</span><strong>${row.qty} 件 · ${POS.money(row.amount)}</strong></div>`; }).join("") : `<div class="empty">近 30 天没有新品。</div>`}</section>
+    `;
+  }
+
+  function renderOperationsAlerts(summaryDay, activeOrders) {
+    if (!el.operationsAlerts) return;
+    const alerts = [];
+    const activeProducts = products.filter(product => product.is_deleted !== true && product.is_active !== false);
+    const low = activeProducts.filter(product => product.track_inventory !== false && (product.sold_out || product.stock <= (product.low_stock_threshold || lowStockThreshold)));
+    if (low.length) alerts.push({ tone: "warning", title: `${low.length} 个商品库存不足或售罄`, detail: low.slice(0, 4).map(productDisplayName).join("、") });
+    const incomplete = activeProducts.filter(product => !product.has_stable_product_id || !product.sku || !product.product_type || !product.name);
+    if (incomplete.length) alerts.push({ tone: "danger", title: `${incomplete.length} 个商品资料不完整`, detail: "请先执行经营管理升级 SQL，再补齐 SKU 和分类。" });
+    const testOrders = orders.filter(order => order.day === summaryDay && order.is_test === true);
+    if (testOrders.length) alerts.push({ tone: "info", title: `${testOrders.length} 笔测试订单已隔离`, detail: "这些订单没有进入正式销售统计。" });
+    const missingCancelReason = orders.filter(order => order.day === summaryDay && ["cancelled", "void"].includes(order.status) && !order.cancel_reason);
+    if (missingCancelReason.length) alerts.push({ tone: "warning", title: `${missingCancelReason.length} 笔取消订单缺少原因`, detail: "旧版取消记录需要补充说明。" });
+    const closeout = closeouts.find(row => row.day === summaryDay);
+    if (summaryDay <= todayKey && !closeout) alerts.push({ tone: "info", title: "当天尚未完成日结", detail: "营业结束后请核对现金、扫码和其他支付。" });
+    if (closeout && Number(closeout.cash_difference ?? closeout.diff ?? 0) !== 0) alerts.push({ tone: "danger", title: "现金收款存在差额", detail: `当前差额 ${POS.money(closeout.cash_difference ?? closeout.diff)}` });
+    const record = businessDays.find(row => row.day === summaryDay);
+    if (record && record.exception_note) alerts.push({ tone: "warning", title: "营业记录有异常说明", detail: record.exception_note });
+    const current = metricsForOrders(activeOrders);
+    const average7 = operatingDayMetrics(summaryDay, 7);
+    if (average7 && average7.sales > 0 && current.sales < average7.sales * 0.65) alerts.push({ tone: "warning", title: "销售额明显低于近期水平", detail: `比过去 7 个营业日均值低 ${Math.round((1 - current.sales / average7.sales) * 100)}%` });
+    el.operationsAlerts.innerHTML = alerts.length ? alerts.map(alert => `<div class="operation-alert ${alert.tone}"><strong>${escapeHtml(alert.title)}</strong><span>${escapeHtml(alert.detail)}</span></div>`).join("") : `<div class="empty success-empty">当前没有需要处理的经营异常。</div>`;
   }
 
   function todayCashExpected() {
@@ -703,11 +912,20 @@
         <img class="menu-thumb" src="${escapeAttr(product.image_path)}" alt="${escapeAttr(product.name)}">
         <div class="menu-row-title">
           <strong>${escapeHtml(isMatrixProduct ? "冰淇淋 SKU" : "普通产品")}</strong>
-          <small>${escapeHtml(product.id)}</small>
+          <small>永久 ID：${escapeHtml(product.has_stable_product_id ? product.product_id : "执行升级 SQL 后生成")}</small>
+          <small>旧编号：${escapeHtml(product.id)}</small>
         </div>
+        <label>
+          SKU
+          <input class="field-input" name="sku" value="${escapeAttr(product.sku || "")}" placeholder="PP-ICE-PAT-STRAW">
+        </label>
         <label>
           产品名
           <input class="field-input" name="name" value="${escapeAttr(product.name)}" required>
+        </label>
+        <label>
+          短名称
+          <input class="field-input" name="short_name" value="${escapeAttr(product.short_name || product.note || product.name)}">
         </label>
         <label>
           中文说明
@@ -722,6 +940,18 @@
         <label>
           子分类
           <input class="field-input" name="subcategory" value="${escapeAttr(product.subcategory || product.shape || "")}" placeholder="例如：钥匙扣 / 激光雕刻">
+        </label>
+        <label>
+          系列
+          <input class="field-input" name="series" value="${escapeAttr(product.series || "")}" placeholder="例如：Patuxai Classics">
+        </label>
+        <label>
+          尺寸
+          <input class="field-input" name="size" value="${escapeAttr(product.size || "")}" placeholder="小 / 中 / 大">
+        </label>
+        <label>
+          单位
+          <input class="field-input" name="unit" value="${escapeAttr(product.unit || "件")}" placeholder="件 / 支 / 杯">
         </label>
         <label>
           形状
@@ -771,6 +1001,14 @@
         <label class="soldout-check">
           <input name="is_active" type="checkbox" ${product.is_active !== false ? "checked" : ""}>
           前台显示
+        </label>
+        <label class="soldout-check">
+          <input name="is_available" type="checkbox" ${product.is_available !== false ? "checked" : ""}>
+          当前可售
+        </label>
+        <label class="soldout-check">
+          <input name="track_inventory" type="checkbox" ${product.track_inventory !== false ? "checked" : ""}>
+          跟踪库存
         </label>
         <button class="button primary" type="submit">保存</button>
         ${isMatrixProduct ? "" : `<button class="button danger" type="button" data-delete-product="${escapeAttr(product.id)}">删除</button>`}
@@ -872,10 +1110,10 @@
           addToMap(iceCreamProductMap, itemName, qty, lineAmount);
         } else {
           otherSales += lineAmount;
-          if (category === "custom") customItemCount += qty;
-          else if (category === "merch") merchItemCount += qty;
-          else if (category === "drink") drinkItemCount += qty;
-          else if (category === "bundle") bundleItemCount += qty;
+          if (category === "service") customItemCount += qty;
+          else if (category === "merchandise") merchItemCount += qty;
+          else if (category === "beverage") drinkItemCount += qty;
+          else if (category === "deposit") bundleItemCount += qty;
           else otherItemCount += qty;
         }
         addToMap(productMap, itemName, qty, lineAmount);
@@ -913,27 +1151,50 @@
       el.lowStockSkuCount.textContent = products.filter(product =>
         isCurrentMenuProduct(product) &&
         product.is_active !== false &&
-        (product.sold_out || product.stock <= (product.low_stock_threshold || lowStockThreshold))
+        product.track_inventory !== false && (product.sold_out || product.stock <= (product.low_stock_threshold || lowStockThreshold))
       ).length;
     }
     el.avgOrder.textContent = POS.money(activeOrders.length ? Math.round(sales / activeOrders.length) : 0);
+    const summaryMetrics = metricsForOrders(activeOrders);
+    const singleOrders = activeOrders.filter(order => (order.order_items || []).reduce((sum, item) => sum + itemQty(item), 0) === 1).length;
+    const mixedOrders = activeOrders.filter(order => {
+      const categories = new Set((order.order_items || []).map(item => itemCategory(item, productById(item.product_id))));
+      return categories.has("icecream") && categories.has("merchandise");
+    }).length;
+    const cancelledOrders = filteredOrders(true).filter(order => ["cancelled", "void"].includes(order.status));
+    const refundAmount = filteredOrders(true).filter(order => order.status === "refunded").reduce((sum, order) => sum + Number(order.refund_amount || orderAmount(order)), 0);
+    if (el.avgItemsPerOrder) el.avgItemsPerOrder.textContent = summaryMetrics.avgItems.toFixed(2);
+    if (el.singleItemOrderRate) el.singleItemOrderRate.textContent = `${activeOrders.length ? Math.round(singleOrders / activeOrders.length * 100) : 0}%`;
+    if (el.mixedOrderRate) el.mixedOrderRate.textContent = `${activeOrders.length ? Math.round(mixedOrders / activeOrders.length * 100) : 0}%`;
+    if (el.cancelRefundSummary) el.cancelRefundSummary.textContent = `${cancelledOrders.length} 单 / ${POS.money(refundAmount)}`;
+    if (el.cashSales) el.cashSales.textContent = `现金 ${POS.money(cashSales)}`;
+    if (el.paymentDetail) el.paymentDetail.textContent = `扫码 ${POS.money(qrSales)} · 其他 ${POS.money(otherPaymentSales)}`;
+    const summaryDay = activeRange === "date" ? selectedDate : todayKey;
+    if (["today", "date"].includes(activeRange)) {
+      renderMetricComparisons(summaryDay, summaryMetrics);
+    } else {
+      [el.salesTotalCompare, el.orderCountCompare, el.itemCountCompare, el.avgOrderCompare, el.avgItemsCompare, el.singleItemCompare].forEach(node => { if (node) node.textContent = "当前所选范围"; });
+    }
 
     renderBars(el.productRanking, iceCreamRows, "当前范围内还没有冰淇淋销售。");
     renderMonthlySalesChart(activeOrders);
     renderDailyPeakChart();
+    renderOperationsHourChart(activeOrders);
     renderCategoryBreakdown(el.categoryBreakdown, categoryStats, categoryProductMaps);
     renderBars(el.paymentSummary, paymentRows, "当前范围内还没有付款记录。");
     renderBars(el.categorySummary, categoryRows, "当前范围内还没有类别数据。");
+    renderProductPerformance(activeOrders);
+    renderOperationsAlerts(summaryDay, activeOrders);
 
     const visibleProducts = filteredProducts();
     renderStockOverview(visibleProducts);
     el.stockSummary.innerHTML = visibleProducts.length ? visibleProducts.map(product => {
       const threshold = product.low_stock_threshold || lowStockThreshold;
-      const low = product.stock <= threshold || product.sold_out;
-      const soldOut = product.sold_out || product.stock <= 0;
+      const low = product.track_inventory !== false && (product.stock <= threshold || product.sold_out);
+      const soldOut = product.is_available === false || (product.track_inventory !== false && (product.sold_out || product.stock <= 0));
       const stockTone = soldOut ? "danger" : low ? "warning" : "";
       return `
-      <article class="stock-card ${low ? "low" : ""}" data-stock-row="${escapeAttr(product.id)}">
+      <article class="stock-card ${low ? "low" : ""} ${product.track_inventory === false ? "non-inventory" : ""}" data-stock-row="${escapeAttr(product.id)}">
         <div class="stock-card-main">
           <div>
             <strong>${escapeHtml(productDisplayName(product))}</strong>
@@ -941,12 +1202,12 @@
           </div>
           <div class="stock-count ${stockTone}">
             <span>库存</span>
-            <strong data-stock-count="${escapeAttr(product.id)}">${product.stock}</strong>
+            <strong data-stock-count="${escapeAttr(product.id)}">${product.track_inventory === false ? "—" : product.stock}</strong>
           </div>
         </div>
         <div class="stock-status-row">
           <span class="stock-pill ${product.is_active === false ? "danger" : ""}">${product.is_active === false ? "已下架" : "上架中"}</span>
-          <span class="stock-pill ${soldOut ? "danger" : low ? "warning" : ""}" data-stock-state="${escapeAttr(product.id)}">${soldOut ? "售空" : low ? "低库存" : "可售"}</span>
+          <span class="stock-pill ${soldOut ? "danger" : low ? "warning" : ""}" data-stock-state="${escapeAttr(product.id)}">${product.track_inventory === false ? "无需库存" : soldOut ? "售空" : low ? "低库存" : "可售"}</span>
         </div>
         <div class="stock-adjust" aria-label="${escapeAttr(product.name)}快捷调库存">
           <button class="mini-button stock-step danger" data-stock-step="${escapeAttr(product.id)}" data-step="-1">-1</button>
@@ -977,7 +1238,7 @@
     `;
     }).join("") : `<div class="empty">当前筛选下没有产品。</div>`;
 
-    const tableOrders = filteredOrders(true);
+    const tableOrders = orders.filter(order => inActiveDateRange(order.day));
     el.ordersBody.innerHTML = tableOrders.length ? tableOrders.map(order => {
       const items = order.order_items.map(item => `${item.product_name || item.name} x${itemQty(item)}`).join("、");
       const canCancel = POS.isRevenueOrder(order);
@@ -988,7 +1249,7 @@
           <td>${items}</td>
           <td>${POS.paymentLabel(order.payment_method)}</td>
           <td><strong>${POS.money(orderAmount(order))}</strong></td>
-          <td>${statusLabel(order.status)}</td>
+          <td>${order.is_test ? '<span class="status-tag test">测试</span> ' : ""}${statusLabel(order.status)}${order.cancel_reason ? `<small class="order-reason">${escapeHtml(order.cancel_reason)}</small>` : ""}</td>
           <td>${canCancel ? `<button class="mini-button" data-void="${order.id}">取消</button>` : ""}</td>
         </tr>
       `;
@@ -997,6 +1258,7 @@
     renderMenuEditor();
     renderInventoryMovements();
     renderCloseout();
+    renderBusinessDays();
   }
 
   async function toggleSoldOut(productId) {
@@ -1163,10 +1425,17 @@
         imagePathInput.value = compressed.dataUrl;
       }
 
-      const updateResult = await client
+      let updateResult = await client
         .from("products")
-        .update({ image_path: compressed.dataUrl, updated_at: new Date().toISOString() })
+        .update({ image_path: compressed.dataUrl, image_url: compressed.dataUrl, updated_at: new Date().toISOString() })
         .eq("id", productId);
+
+      if (updateResult.error && /column|schema cache/i.test(updateResult.error.message || "")) {
+        updateResult = await client
+          .from("products")
+          .update({ image_path: compressed.dataUrl, updated_at: new Date().toISOString() })
+          .eq("id", productId);
+      }
 
       if (updateResult.error) {
         POS.showToast(updateResult.error.message);
@@ -1192,22 +1461,33 @@
     const productId = form.dataset.productForm;
     const formData = new FormData(form);
     const payload = {
+      sku: String(formData.get("sku") || "").trim(),
       name: String(formData.get("name") || "").trim(),
+      short_name: String(formData.get("short_name") || "").trim(),
       note: String(formData.get("note") || "").trim(),
       category: POS.normalizeCategory(formData.get("category")),
+      product_type: POS.normalizeCategory(formData.get("category")),
       subcategory: String(formData.get("subcategory") || "").trim(),
+      series: String(formData.get("series") || "").trim(),
+      size: String(formData.get("size") || "").trim(),
+      unit: String(formData.get("unit") || "件").trim(),
       shape: String(formData.get("shape") || "").trim(),
       flavor: String(formData.get("flavor") || "").trim(),
       price: Number(formData.get("price") || 0),
       selling_price: Number(formData.get("price") || 0),
+      sale_price: Number(formData.get("price") || 0),
       stock: Number(formData.get("stock") || 0),
       sort_order: Number(formData.get("sort_order") || 0),
+      display_order: Number(formData.get("sort_order") || 0),
       shape_order: Number(formData.get("shape_order") || 0),
       flavor_order: Number(formData.get("flavor_order") || 0),
       low_stock_threshold: Number(formData.get("low_stock_threshold") || lowStockThreshold),
       image_path: String(formData.get("image_path") || "").trim(),
+      image_url: String(formData.get("image_path") || "").trim(),
       sold_out: formData.has("sold_out"),
       is_active: formData.has("is_active"),
+      is_available: formData.has("is_available"),
+      track_inventory: formData.has("track_inventory"),
       is_deleted: false,
       updated_at: new Date().toISOString()
     };
@@ -1270,9 +1550,12 @@
     const formData = new FormData(form);
     const name = String(formData.get("name") || "").trim();
     const category = POS.normalizeCategory(formData.get("category"));
+    const sku = String(formData.get("sku") || "").trim().toUpperCase();
+    const series = String(formData.get("series") || "").trim();
     const price = Number(formData.get("price") || 0);
     const stock = Number(formData.get("stock") || 0);
     const lowStock = Number(formData.get("low_stock_threshold") || lowStockThreshold);
+    const trackInventory = formData.has("track_inventory");
     const note = String(formData.get("note") || "").trim();
 
     if (!name || !category) {
@@ -1287,23 +1570,34 @@
     const button = form.querySelector("button[type='submit']");
     const payload = {
       id: makeProductId(name, category),
+      sku: sku || null,
       name,
+      short_name: note || name,
       category,
+      product_type: category,
       subcategory: "",
+      series,
+      size: "",
+      unit: "件",
       shape: "",
       flavor: "",
       shape_order: 0,
       flavor_order: 0,
       price: Math.floor(price),
       selling_price: Math.floor(price),
+      sale_price: Math.floor(price),
       stock: Math.floor(stock),
       low_stock_threshold: Math.floor(lowStock),
-      sold_out: Math.floor(stock) <= 0,
+      sold_out: trackInventory && Math.floor(stock) <= 0,
       is_active: true,
+      is_available: !trackInventory || Math.floor(stock) > 0,
+      track_inventory: trackInventory,
       is_deleted: false,
       image_path: "assets/icons/app-icon-512.png",
+      image_url: "assets/icons/app-icon-512.png",
       note,
-      sort_order: category === "custom" ? 100 + products.length : 200 + products.length,
+      sort_order: category === "service" ? 100 + products.length : 200 + products.length,
+      display_order: category === "service" ? 100 + products.length : 200 + products.length,
       updated_at: new Date().toISOString()
     };
 
@@ -1356,9 +1650,17 @@
   }
 
   async function voidOrder(orderId) {
-    const confirmed = window.confirm("确认取消这笔订单？库存会自动加回，并生成退回库存流水。");
-    if (!confirmed) return;
-    const result = await client.rpc("void_order", { p_order_id: orderId });
+    const reason = window.prompt("请输入取消原因（必填）。取消后库存会自动加回。", "顾客取消");
+    if (reason === null) return;
+    if (reason.trim().length < 2) {
+      POS.showToast("请填写取消原因");
+      return;
+    }
+    const operator = document.querySelector("#signedInAs") ? document.querySelector("#signedInAs").textContent : "";
+    let result = await client.rpc("void_order", { p_order_id: orderId, p_cancel_reason: reason.trim(), p_operator: operator });
+    if (result.error && /function|parameter|argument|schema cache/i.test(result.error.message || "")) {
+      result = await client.rpc("void_order", { p_order_id: orderId });
+    }
     if (result.error) {
       POS.showToast(result.error.message);
       return;
@@ -1413,6 +1715,42 @@
       return;
     }
     POS.showToast("日结已保存");
+    await refresh();
+  }
+
+  function renderBusinessDays() {
+    if (!el.businessDayHistory) return;
+    const rows = businessDays.filter(row => inActiveDateRange(row.day)).slice(0, 31);
+    el.businessDayHistory.innerHTML = rows.length ? rows.map(row => `
+      <div class="business-day-row">
+        <div><strong>${escapeHtml(row.day)} ${weekdayLabel(row.day)}</strong><span>${escapeHtml(row.weather || "天气未填")} · ${escapeHtml(row.activity || "无活动记录")}</span></div>
+        <div><strong>${escapeHtml(row.status || "open")}</strong><span>${escapeHtml(row.exception_note || "无异常")}</span></div>
+      </div>
+    `).join("") : `<div class="empty">当前范围还没有营业记录。</div>`;
+  }
+
+  async function saveBusinessDay(form) {
+    const formData = new FormData(form);
+    const payload = {
+      day: String(formData.get("day") || todayKey),
+      planned_open_time: formData.get("planned_open_time") || null,
+      planned_close_time: formData.get("planned_close_time") || null,
+      weather: String(formData.get("weather") || "").trim(),
+      activity: String(formData.get("activity") || "").trim(),
+      exception_note: String(formData.get("exception_note") || "").trim(),
+      status: String(formData.get("status") || "open"),
+      operator: document.querySelector("#signedInAs") ? document.querySelector("#signedInAs").textContent : "",
+      updated_at: new Date().toISOString()
+    };
+    const button = form.querySelector("button[type='submit']");
+    POS.setBusy(button, true, "保存中");
+    const result = await client.from("business_days").upsert(payload);
+    POS.setBusy(button, false);
+    if (result.error) {
+      POS.showToast(result.error.message && /business_days|schema cache/i.test(result.error.message) ? "请先执行经营管理升级 SQL" : result.error.message);
+      return;
+    }
+    POS.showToast("营业记录已保存");
     await refresh();
   }
 
@@ -1644,6 +1982,16 @@
     });
   }
 
+  if (el.hourMetricSwitch) {
+    el.hourMetricSwitch.addEventListener("click", event => {
+      const button = event.target.closest("[data-hour-metric]");
+      if (!button) return;
+      activeHourMetric = button.dataset.hourMetric;
+      el.hourMetricSwitch.querySelectorAll("[data-hour-metric]").forEach(item => item.classList.toggle("active", item === button));
+      renderOperationsHourChart(filteredOrders(false));
+    });
+  }
+
   window.addEventListener("hashchange", () => setAdminView(currentAdminView()));
 
   document.body.addEventListener("click", event => {
@@ -1716,6 +2064,14 @@
     el.addProductForm.addEventListener("submit", event => {
       event.preventDefault();
       addProduct(event.target);
+    });
+  }
+  if (el.businessDayForm) {
+    const dayInput = el.businessDayForm.querySelector("[name='day']");
+    if (dayInput) dayInput.value = todayKey;
+    el.businessDayForm.addEventListener("submit", event => {
+      event.preventDefault();
+      saveBusinessDay(event.target);
     });
   }
   el.menuEditor.addEventListener("submit", event => {

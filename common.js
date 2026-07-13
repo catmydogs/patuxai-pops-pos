@@ -1,5 +1,5 @@
 (function () {
-  const appVersion = "20260713-operations-dashboard";
+  const appVersion = "20260713-p1-business-flow-r2";
   const productCatalog = [
     { id: "patuxai-mango-passion", name: "Patuxai - Mango & Passion Fruit", category: "Patuxai Pops", shape: "Patuxai", flavor: "Mango & Passion Fruit", shape_order: 1, flavor_order: 1, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/shapes/shape-patuxai.png", note: "芒果百香果", sort_order: 1 },
     { id: "patuxai-strawberry-milk", name: "Patuxai - Strawberry Milk", category: "Patuxai Pops", shape: "Patuxai", flavor: "Strawberry Milk", shape_order: 1, flavor_order: 2, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/shapes/shape-patuxai.png", note: "草莓牛奶", sort_order: 2 },
@@ -136,15 +136,28 @@
       return message;
     }
 
+    async function retryExpiredRequest(url, options, response) {
+      if (!response || response.status !== 401) return response;
+      const text = await response.clone().text();
+      if (!/PGRST303|jwt expired|token.*expired/i.test(text)) return response;
+      const refreshed = await refreshSession(readSession());
+      if (!refreshed || !refreshed.access_token) return response;
+      return fetchWithTimeout(url, {
+        ...options,
+        headers: { ...(options.headers || {}), Authorization: `Bearer ${refreshed.access_token}` }
+      });
+    }
+
     function builder(table) {
       const state = {
         table,
         select: "*",
         filters: [],
         order: null,
+        limit: null,
         payload: null,
         mode: "select",
-        upsert: false
+        returning: null
       };
 
       async function execute() {
@@ -154,6 +167,7 @@
         if (state.order) {
           params.set("order", `${state.order.column}.${state.order.ascending ? "asc" : "desc"}`);
         }
+        if (state.limit != null) params.set("limit", String(state.limit));
 
         const url = `${config.SUPABASE_URL}/rest/v1/${state.table}?${params.toString()}`;
         const options = {
@@ -179,9 +193,19 @@
           options.body = JSON.stringify(state.payload);
         }
 
+        if (state.mode === "insert") {
+          options.method = "POST";
+          options.headers = await apiHeaders({
+            "Content-Type": "application/json",
+            Prefer: state.returning ? "return=representation" : "return=minimal"
+          });
+          options.body = JSON.stringify(state.payload);
+        }
+
         let response;
         try {
           response = await fetchWithTimeout(url, options);
+          response = await retryExpiredRequest(url, options, response);
         } catch (error) {
           return { data: null, error: { message: friendlyNetworkError(error) } };
         }
@@ -190,7 +214,7 @@
           const text = await response.text();
           return { data: null, error: { message: normalizeApiError(text) } };
         }
-        if (options.method === "GET") {
+        if (options.method === "GET" || state.returning) {
           return { data: await response.json(), error: null };
         }
         return { data: null, error: null };
@@ -199,7 +223,8 @@
       return {
         select(columns) {
           state.select = columns || "*";
-          state.mode = "select";
+          if (state.mode === "select") state.mode = "select";
+          else state.returning = state.select;
           return this;
         },
         order(column, options) {
@@ -207,6 +232,10 @@
             column,
             ascending: !options || options.ascending !== false
           };
+          return this;
+        },
+        limit(value) {
+          state.limit = Math.max(0, Number(value || 0));
           return this;
         },
         eq(column, value) {
@@ -218,6 +247,11 @@
           state.mode = "update";
           return this;
         },
+        insert(payload) {
+          state.payload = payload;
+          state.mode = "insert";
+          return this;
+        },
         upsert(payload) {
           state.payload = payload;
           state.mode = "upsert";
@@ -225,6 +259,9 @@
         },
         then(resolve, reject) {
           return execute().then(resolve, reject);
+        },
+        catch(reject) {
+          return execute().catch(reject);
         }
       };
     }
@@ -267,16 +304,19 @@
       from(table) {
         return builder(table);
       },
-      async rpc(name, payload) {
-        let response;
-        try {
-          response = await fetchWithTimeout(`${config.SUPABASE_URL}/rest/v1/rpc/${name}`, {
+        async rpc(name, payload) {
+          const url = `${config.SUPABASE_URL}/rest/v1/rpc/${name}`;
+          const options = {
             method: "POST",
             headers: await apiHeaders({
               "Content-Type": "application/json"
             }),
             body: JSON.stringify(payload || {})
-          });
+          };
+          let response;
+          try {
+            response = await fetchWithTimeout(url, options);
+            response = await retryExpiredRequest(url, options, response);
         } catch (error) {
           return { data: null, error: { message: friendlyNetworkError(error) } };
         }
@@ -332,8 +372,10 @@
   function normalizePaymentMethod(value) {
     const text = String(value || "").trim().toLowerCase();
     if (["现金", "cash"].includes(text)) return "cash";
-    if (["扫码", "qr", "qr transfer", "scan", "bank transfer", "支付宝", "微信", "wechat", "alipay"].includes(text)) return "qr";
-    if (["card", "银行卡"].includes(text)) return "card";
+    if (["扫码", "qr", "qr transfer", "scan", "支付宝", "微信", "wechat", "alipay"].includes(text)) return "qr";
+    if (["bank_transfer", "bank transfer", "transfer", "转账", "银行卡"].includes(text)) return "bank_transfer";
+    if (["mixed", "mixed payment", "混合支付"].includes(text)) return "mixed";
+    if (["complimentary", "comp", "赠送", "免单"].includes(text)) return "complimentary";
     return "other";
   }
 
@@ -341,9 +383,9 @@
     const labels = {
       cash: "现金",
       qr: "扫码",
-      card: "银行卡",
-      alipay: "支付宝",
-      wechat: "微信",
+      bank_transfer: "银行转账",
+      mixed: "混合支付",
+      complimentary: "赠送",
       other: "其他"
     };
     return labels[normalizePaymentMethod(method)] || "其他";
@@ -351,6 +393,14 @@
 
   function isRevenueOrder(order) {
     return ["paid", "completed"].includes(String(order && order.status || "paid"));
+  }
+
+  function roleLabel(role) {
+    return ({ owner: "Owner", manager: "Manager", cashier: "Cashier", viewer: "Viewer" })[role] || "Viewer";
+  }
+
+  function canManage(role) {
+    return ["owner", "manager"].includes(String(role || ""));
   }
 
   function normalizeProduct(product) {
@@ -607,6 +657,8 @@
     categoryLabel,
     normalizePaymentMethod,
     paymentLabel,
+    roleLabel,
+    canManage,
     isRevenueOrder,
     normalizeProduct,
     csvEscape,

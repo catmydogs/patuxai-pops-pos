@@ -11,7 +11,7 @@
   <title>Patuxai Pops POS</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260713-operations-dashboard">
+  <link rel="stylesheet" href="styles.css?v=20260713-p1-business-flow-r2">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -33,6 +33,22 @@
     </form>
   </section>
 
+  <section class="shift-screen" id="shiftScreen" hidden>
+    <form class="shift-card" id="openShiftForm">
+      <div>
+        <span class="eyebrow">今日开班</span>
+        <h1>开始营业</h1>
+        <p>确认收银员和初始现金后，才可以开始正式收银。</p>
+      </div>
+      <div class="shift-date" id="shiftBusinessDate"></div>
+      <label>收银员<input class="field-input" id="shiftCashierName" readonly></label>
+      <label>初始现金 LAK<input class="field-input" id="openingCashInput" type="number" min="0" step="1000" value="0" required></label>
+      <label>开班备注<input class="field-input" id="openingNoteInput" placeholder="可选"></label>
+      <div class="shift-stock-note" id="shiftStockNote"></div>
+      <button class="button primary" type="submit">开始营业</button>
+    </form>
+  </section>
+
   <div class="app">
     <main>
       <section class="topbar" aria-label="顶部">
@@ -40,12 +56,13 @@
           <div class="mark" aria-hidden="true"></div>
           <div>
             <h1>Patuxai Pops POS</h1>
-            <div class="subtle"><span id="todayText"></span> · <span id="signedInAs"></span> · <span class="sync-badge online" id="syncBadge">在线</span></div>
+            <div class="subtle"><span id="todayText"></span> · <span id="signedInAs"></span> · <span class="shift-badge" id="shiftStatus">未开班</span> · <span class="sync-badge online" id="syncBadge">在线</span></div>
           </div>
         </div>
         <div class="toolbar">
           <input class="search" id="searchInput" type="search" placeholder="搜索商品或口味">
           <a class="ghost" href="admin.html">后台统计</a>
+          <button class="ghost" id="closeShiftBtn" type="button" hidden>交班</button>
           <button class="ghost" id="logoutBtn">退出</button>
         </div>
       </section>
@@ -94,13 +111,34 @@
           <div class="total"><span>应收</span><strong id="grandTotal">0 KIP</strong></div>
         </div>
         <label class="discount-row" for="discountInput">
-          <span>折扣金额</span>
+          <span>手动折扣</span>
           <input class="field-input" id="discountInput" inputmode="decimal" type="number" min="0" step="1000" placeholder="例如 10000">
         </label>
+        <label class="discount-row" id="discountReasonRow" for="discountReasonInput" hidden>
+          <span>折扣原因</span>
+          <input class="field-input" id="discountReasonInput" placeholder="Manager / Owner 必填">
+        </label>
+        <div class="promotion-applied" id="promotionApplied" hidden></div>
         <div class="pay-methods" id="payMethods">
-          <button class="pay active" data-pay="cash">现金</button>
-          <button class="pay" data-pay="qr">扫码</button>
+          <button class="pay active" data-pay="cash">Cash</button>
+          <button class="pay" data-pay="qr">QR</button>
+          <button class="pay" data-pay="bank_transfer">转账</button>
+          <button class="pay" data-pay="mixed">混合</button>
+          <button class="pay" data-pay="complimentary">赠送</button>
           <button class="pay" data-pay="other">其他</button>
+        </div>
+        <div class="payment-confirm" id="paymentConfirm">
+          <div class="qr-payment-display" id="qrPaymentDisplay" hidden><img id="qrPaymentImage" alt="QR 收款码"><strong id="qrPaymentAmount">应收 0 KIP</strong><span>确认到账后再完成收款</span></div>
+          <label id="paymentReferenceRow" hidden>交易参考号<input class="field-input" id="paymentReferenceInput" placeholder="可选"></label>
+          <label class="confirm-check" id="paymentConfirmedRow" hidden><input id="paymentConfirmedInput" type="checkbox"> 已确认到账</label>
+          <div class="mixed-payment-grid" id="mixedPaymentGrid" hidden>
+            <label>Cash<input class="field-input" id="mixedCashInput" type="number" min="0" step="1000" value="0"></label>
+            <label>QR<input class="field-input" id="mixedQrInput" type="number" min="0" step="1000" value="0"></label>
+            <label>Bank Transfer<input class="field-input" id="mixedTransferInput" type="number" min="0" step="1000" value="0"></label>
+            <div class="mixed-total" id="mixedTotalText">合计 0 KIP</div>
+          </div>
+          <label id="complimentaryReasonRow" hidden>赠送原因<input class="field-input" id="complimentaryReasonInput" placeholder="顾客补偿 / 活动赠送等"></label>
+          <label>订单备注<input class="field-input" id="orderNoteInput" placeholder="可选"></label>
         </div>
         <div class="cash-presets" id="cashPresets">
           <button class="cash-preset" data-cash="exact">刚好</button>
@@ -117,9 +155,30 @@
     </aside>
   </div>
 
+  <section class="shift-close-sheet" id="closeShiftSheet" hidden>
+    <form class="shift-card close-shift-card" id="closeShiftForm">
+      <div class="sheet-head"><div><span class="eyebrow">交班对账</span><h2>结束当前班次</h2></div><button class="ghost" id="closeShiftCancel" type="button">关闭</button></div>
+      <div class="shift-summary" id="shiftCloseSummary"></div>
+      <div class="shift-close-grid">
+        <label>实际现金<input class="field-input" name="actual_cash" type="number" min="0" step="1000" required></label>
+        <label>实际 QR 到账<input class="field-input" name="qr_actual" type="number" min="0" step="1000"></label>
+        <label>实际转账<input class="field-input" name="transfer_actual" type="number" min="0" step="1000"></label>
+        <label>其他实际到账<input class="field-input" name="other_actual" type="number" min="0" step="1000"></label>
+        <label>天气<select class="field-input" name="weather"><option value="sunny">晴</option><option value="cloudy">多云</option><option value="light_rain">小雨</option><option value="heavy_rain">大雨</option><option value="very_hot">高温</option><option value="other">其他</option></select></label>
+        <label>库存问题<input class="field-input" name="stock_issue" placeholder="无则留空"></label>
+        <label>设备问题<input class="field-input" name="equipment_issue" placeholder="无则留空"></label>
+        <label>特殊活动<input class="field-input" name="special_event" placeholder="无则留空"></label>
+        <label class="wide-field">差异原因<input class="field-input" name="difference_note" placeholder="有差额时必填"></label>
+        <label class="wide-field">交班备注<input class="field-input" name="closing_note" placeholder="可选"></label>
+        <label class="wide-field">当日备注<input class="field-input" name="operation_note" placeholder="客流、天气、异常情况等"></label>
+      </div>
+      <button class="button primary" type="submit">确认交班</button>
+    </form>
+  </section>
+
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260713-operations-dashboard"></script>
-  <script src="common.js?v=20260713-operations-dashboard"></script>
-  <script src="pos.js?v=20260713-operations-dashboard"></script>
+  <script src="config.js?v=20260713-p1-business-flow-r2"></script>
+  <script src="common.js?v=20260713-p1-business-flow-r2"></script>
+  <script src="pos.js?v=20260713-p1-business-flow-r2"></script>
 </body>
 </html>

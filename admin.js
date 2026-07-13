@@ -2,6 +2,9 @@
   const client = POS.getClient();
   const todayKey = POS.todayKey();
   const lowStockThreshold = POS.lowStockThreshold || 10;
+  const filterStorageKey = "patuxai-pops-admin-filters";
+  let savedFilters = {};
+  try { savedFilters = JSON.parse(window.localStorage.getItem(filterStorageKey) || "{}") || {}; } catch (error) { savedFilters = {}; }
   const currentProductIds = new Set(POS.productCatalog.map(product => product.id));
   const legacyProductIds = new Set([
     "mango-passion",
@@ -14,18 +17,35 @@
     "peach-jasmine-sparkle",
     "grapefruit-sparkle"
   ]);
-  let activeRange = "today";
-  let selectedDate = todayKey;
-  let selectedMonth = todayKey.slice(0, 7);
-  let rangeStartDate = todayKey;
-  let rangeEndDate = todayKey;
-  let activeProductFilter = "active";
+  let activeRange = savedFilters.activeRange || "today";
+  let selectedDate = savedFilters.selectedDate || todayKey;
+  let selectedMonth = savedFilters.selectedMonth || todayKey.slice(0, 7);
+  let rangeStartDate = savedFilters.rangeStartDate || todayKey;
+  let rangeEndDate = savedFilters.rangeEndDate || todayKey;
+  let activeProductFilter = savedFilters.activeProductFilter || "active";
   let products = [];
   let orders = [];
   let closeouts = [];
   let inventoryMovements = [];
   let businessDays = [];
+  let shifts = [];
+  let payments = [];
+  let promotions = [];
+  let promotionUsage = [];
+  let dailyOperations = [];
+  let reconciliations = [];
+  let upsellEvents = [];
+  let dataQualityIssues = [];
+  let userProfiles = [];
+  let auditLogs = [];
+  let currentSession = null;
+  let currentRole = "viewer";
+  let p1Enabled = false;
   let activeHourMetric = "amount";
+
+  function persistFilters() {
+    window.localStorage.setItem(filterStorageKey, JSON.stringify({ activeRange, selectedDate, selectedMonth, rangeStartDate, rangeEndDate, activeProductFilter }));
+  }
 
   const el = {
     rangeText: document.querySelector("#rangeText"),
@@ -62,6 +82,7 @@
     singleItemCompare: document.querySelector("#singleItemCompare"),
     mixedOrderRate: document.querySelector("#mixedOrderRate"),
     cancelRefundSummary: document.querySelector("#cancelRefundSummary"),
+    discountGiftSummary: document.querySelector("#discountGiftSummary"),
     paymentDetail: document.querySelector("#paymentDetail"),
     productRanking: document.querySelector("#productRanking"),
     monthlySalesChart: document.querySelector("#monthlySalesChart"),
@@ -77,9 +98,13 @@
     stockSummary: document.querySelector("#stockSummary"),
     inventoryMovements: document.querySelector("#inventoryMovements"),
     ordersBody: document.querySelector("#ordersBody"),
+    orderProductFilter: document.querySelector("#orderProductFilter"),
+    orderPaymentFilter: document.querySelector("#orderPaymentFilter"),
+    orderCashierFilter: document.querySelector("#orderCashierFilter"),
     exportOrdersCsv: document.querySelector("#exportOrdersCsv"),
     exportItemsCsv: document.querySelector("#exportItemsCsv"),
     exportInventoryCsv: document.querySelector("#exportInventoryCsv"),
+    exportXlsx: document.querySelector("#exportXlsx"),
     expectedCash: document.querySelector("#expectedCash"),
     actualCash: document.querySelector("#actualCash"),
     cashDiff: document.querySelector("#cashDiff"),
@@ -92,7 +117,27 @@
     adminShortcuts: document.querySelector("#adminShortcuts"),
     backTop: document.querySelector("#backTop"),
     businessDayForm: document.querySelector("#businessDayForm"),
-    businessDayHistory: document.querySelector("#businessDayHistory")
+    businessDayHistory: document.querySelector("#businessDayHistory"),
+    basketAnalysis: document.querySelector("#basketAnalysis"),
+    shiftsList: document.querySelector("#shiftsList"),
+    shiftCashierFilter: document.querySelector("#shiftCashierFilter"),
+    shiftStatusFilter: document.querySelector("#shiftStatusFilter"),
+    promotionForm: document.querySelector("#promotionForm"),
+    promotionGiftProduct: document.querySelector("#promotionGiftProduct"),
+    promotionEligibleProduct: document.querySelector("#promotionEligibleProduct"),
+    promotionsList: document.querySelector("#promotionsList"),
+    refreshReconciliation: document.querySelector("#refreshReconciliation"),
+    reconciliationList: document.querySelector("#reconciliationList"),
+    currentRoleText: document.querySelector("#currentRoleText"),
+    dataQualityList: document.querySelector("#dataQualityList"),
+    rolesList: document.querySelector("#rolesList"),
+    auditList: document.querySelector("#auditList"),
+    exportShiftsCsv: document.querySelector("#exportShiftsCsv"),
+    exportPaymentsCsv: document.querySelector("#exportPaymentsCsv"),
+    exportPromotionsCsv: document.querySelector("#exportPromotionsCsv"),
+    exportPromotionUsageCsv: document.querySelector("#exportPromotionUsageCsv"),
+    exportUpsellCsv: document.querySelector("#exportUpsellCsv"),
+    exportOperationsCsv: document.querySelector("#exportOperationsCsv")
   };
 
   if (el.menuEditor) {
@@ -113,7 +158,11 @@
     inventoryMovementsPanel: "inventory",
     closeoutPanel: "closeout",
     ordersPanel: "orders",
-    businessDayPanel: "business"
+    businessDayPanel: "business",
+    shiftsPanel: "shifts",
+    promotionsPanel: "promotions",
+    reconciliationPanel: "reconciliation",
+    systemPanel: "system"
   };
 
   function currentAdminView() {
@@ -228,7 +277,7 @@
     try {
       let ordersResult = await client
         .from("orders")
-        .select("id, day, time_text, payment_method, total, total_amount, discount_amount, final_amount, status, cashier, note, created_at, is_test, promotion_code, promotion_note, cancel_reason, cancelled_at, refund_amount, order_items(product_id, product_uid, name, product_name, category, product_type, subcategory, qty, quantity, price, unit_price, subtotal, item_type, promotion_code, gift_reason)")
+        .select("id, shift_id, day, time_text, payment_method, total, total_amount, discount_amount, final_amount, status, cashier, note, created_at, is_test, promotion_id, promotion_code, promotion_note, promotion_name_snapshot, complimentary_reason, cancel_reason, cancelled_at, refund_amount, order_items(product_id, product_uid, name, product_name, category, product_type, subcategory, qty, quantity, price, unit_price, subtotal, item_type, promotion_code, gift_reason), payments(payment_id, payment_method, amount, payment_status, reference_number)")
         .order("created_at", { ascending: false });
       if (ordersResult.error && /column|schema cache|relationship|select/i.test(ordersResult.error.message || "")) {
         ordersResult = await client
@@ -278,12 +327,45 @@
       businessDays = [];
     }
 
+    try {
+      const profileResult = await client.from("user_profiles").select("user_id, email, display_name, role, is_active");
+      if (profileResult.error) throw profileResult.error;
+      userProfiles = profileResult.data || [];
+      const ownProfile = userProfiles.find(profile => currentSession && profile.user_id === currentSession.user.id);
+      currentRole = ownProfile && ownProfile.is_active !== false ? ownProfile.role : "viewer";
+      const results = await Promise.all([
+        client.from("shifts").select("*").order("opened_at", { ascending: false }),
+        client.from("payments").select("*").order("created_at", { ascending: false }),
+        client.from("promotions").select("*").order("created_at", { ascending: false }),
+        client.from("promotion_usage").select("*").order("used_at", { ascending: false }),
+        client.from("daily_operations").select("*").order("business_date", { ascending: false }),
+        client.from("daily_reconciliations").select("*").order("business_date", { ascending: false }),
+        client.from("upsell_events").select("*").order("shown_at", { ascending: false }),
+        client.from("pos_data_quality_issues").select("*"),
+        client.from("audit_logs").select("*").order("created_at", { ascending: false }).limit(80)
+      ]);
+      [shifts, payments, promotions, promotionUsage, dailyOperations, reconciliations, upsellEvents, dataQualityIssues, auditLogs] = results.map(result => result.error ? [] : (result.data || []));
+      p1Enabled = !results[0].error && !results[1].error && !results[2].error;
+    } catch (error) {
+      shifts = [];
+      payments = [];
+      promotions = [];
+      promotionUsage = [];
+      dailyOperations = [];
+      reconciliations = [];
+      upsellEvents = [];
+      dataQualityIssues = [];
+      auditLogs = [];
+      p1Enabled = false;
+    }
+
     if (issues.length) {
       POS.showToast(`${issues.join("、")}数据暂时未完全加载`);
     }
   }
 
-  async function refresh() {
+  async function refresh(session) {
+    currentSession = session || currentSession;
     await loadAll();
     render();
   }
@@ -600,6 +682,9 @@
     const rows = days.map(day => ({ day, weekday: weekdayLabel(day), ...byDay[day] }));
     const total = rows.reduce((sum, row) => sum + row.amount, 0);
     const totalQty = rows.reduce((sum, row) => sum + row.qty, 0);
+    const activeDayCount = rows.filter(row => row.orders > 0).length;
+    const calendarAverage = rows.length ? total / rows.length : 0;
+    const activeDayAverage = activeDayCount ? total / activeDayCount : 0;
     const max = Math.max(...rows.map(row => row.amount), 1);
     const chartWidth = 920;
     const chartHeight = 260;
@@ -623,6 +708,8 @@
         <div><span>${customRange ? "日期范围" : "月份"}</span><strong>${escapeHtml(chartLabel)}</strong></div>
         <div><span>销售额</span><strong>${POS.money(total)}</strong></div>
         <div><span>售出数量</span><strong>${totalQty}</strong></div>
+        <div><span>日历日均</span><strong>${POS.money(Math.round(calendarAverage))}</strong></div>
+        <div><span>营业日均</span><strong>${POS.money(Math.round(activeDayAverage))}</strong></div>
         <div><span>峰值日期</span><strong>${peak.day.slice(5)} ${peak.weekday} · ${POS.money(peak.amount)}</strong></div>
       </div>
       <div class="line-chart-scroll">
@@ -766,17 +853,24 @@
 
   function renderOperationsHourChart(activeOrders) {
     if (!el.operationsHourChart) return;
-    const rows = Array.from({ length: 24 }, (_, hour) => ({ hour, amount: 0, orders: 0, qty: 0, avg: 0 }));
+    const rows = Array.from({ length: 24 }, (_, hour) => ({ hour, amount: 0, orders: 0, qty: 0, avg: 0, avgItems: 0, iceOrders: 0, mixedOrders: 0, addon: 0 }));
     activeOrders.forEach(order => {
       const row = rows[orderHour(order)];
       row.amount += orderAmount(order);
       row.orders += 1;
       row.qty += (order.order_items || []).reduce((sum, item) => sum + itemQty(item), 0);
+      const categories = new Set((order.order_items || []).map(item => itemCategory(item, productById(item.product_id))));
+      if (categories.has("icecream")) row.iceOrders += 1;
+      if (categories.has("icecream") && categories.has("merchandise")) row.mixedOrders += 1;
     });
-    rows.forEach(row => { row.avg = row.orders ? row.amount / row.orders : 0; });
+    rows.forEach(row => {
+      row.avg = row.orders ? row.amount / row.orders : 0;
+      row.avgItems = row.orders ? row.qty / row.orders : 0;
+      row.addon = row.iceOrders ? row.mixedOrders / row.iceOrders * 100 : 0;
+    });
     const max = Math.max(...rows.map(row => row[activeHourMetric]), 1);
-    const labels = { amount: "销售额", orders: "订单数", qty: "商品件数", avg: "客单价" };
-    const format = value => ["amount", "avg"].includes(activeHourMetric) ? POS.money(Math.round(value)) : `${Math.round(value)}`;
+    const labels = { amount: "销售额", orders: "订单数", qty: "商品件数", avg: "客单价", avgItems: "每单件数", addon: "文创附加率" };
+    const format = value => ["amount", "avg"].includes(activeHourMetric) ? POS.money(Math.round(value)) : activeHourMetric === "addon" ? `${value.toFixed(0)}%` : activeHourMetric === "avgItems" ? value.toFixed(2) : `${Math.round(value)}`;
     const periodClass = hour => hour >= 11 && hour < 15 ? "lunch" : hour >= 15 && hour < 17 ? "afternoon" : hour >= 17 && hour < 22 ? "evening" : "off-hours";
     const peak = rows.reduce((best, row) => row[activeHourMetric] > best[activeHourMetric] ? row : best, rows[0]);
     el.operationsHourChart.innerHTML = `
@@ -804,11 +898,18 @@
     activeOrders.forEach(order => (order.order_items || []).forEach(item => {
       const product = productById(item.product_id);
       const key = item.product_id || item.product_uid || item.product_name || item.name;
-      const current = sold.get(key) || { name: item.product_name || item.name || "商品", qty: 0, amount: 0, flavor: (product && product.flavor) || "" };
-      current.qty += itemQty(item);
+      const current = sold.get(key) || { name: item.product_name || item.name || "商品", qty: 0, giftQty: 0, amount: 0, orders: new Set(), days: new Set(), flavor: (product && product.flavor) || "" };
+      if (["gift", "complimentary"].includes(item.item_type)) current.giftQty += itemQty(item);
+      else current.qty += itemQty(item);
       current.amount += itemNetSubtotal(order, item);
+      current.orders.add(order.id);
+      current.days.add(order.day);
       sold.set(key, current);
     }));
+    const refunded = new Map();
+    orders.filter(order => order.status === "refunded" && inActiveDateRange(order.day)).forEach(order => (order.order_items || []).forEach(item => refunded.set(item.product_id, (refunded.get(item.product_id) || 0) + itemQty(item))));
+    const wasted = new Map();
+    filteredInventoryMovements().filter(row => ["waste", "sample"].includes(row.change_type || row.reason) || row.movement_type === "waste").forEach(row => wasted.set(row.product_id, (wasted.get(row.product_id) || 0) + Math.abs(Number(row.quantity_change ?? row.change_qty ?? row.quantity ?? 0))));
     const ranking = [...sold.values()].sort((a, b) => b.qty - a.qty).slice(0, 8);
     const flavors = new Map();
     products.filter(product => product.product_type === "icecream" || product.category === "icecream").forEach(product => {
@@ -840,7 +941,7 @@
       return (Date.now() - new Date(product.created_at).getTime()) / 86400000 <= 30;
     });
     el.productPerformance.innerHTML = `
-      <section><h3>销量排名</h3>${ranking.length ? ranking.map((row, index) => `<div class="performance-row"><span>${index + 1}. ${escapeHtml(row.name)}</span><strong>${row.qty} 件 · ${POS.money(row.amount)}</strong></div>`).join("") : `<div class="empty">当前范围暂无销售。</div>`}</section>
+      <section><h3>销量排名</h3>${ranking.length ? ranking.map((row, index) => { const key = [...sold.entries()].find(([, value]) => value === row)?.[0]; return `<div class="performance-row"><span>${index + 1}. ${escapeHtml(row.name)}<small>${row.orders.size} 单 · ${row.days.size} 个有销售营业日 · 赠品 ${row.giftQty} · 报损 ${wasted.get(key) || 0} · 退款 ${refunded.get(key) || 0}</small></span><strong>${row.qty} 件 · ${POS.money(row.amount)}</strong></div>`; }).join("") : `<div class="empty">当前范围暂无销售。</div>`}</section>
       <section><h3>口味销量 / 当前库存</h3>${[...flavors.entries()].map(([name, row]) => `<div class="performance-row"><span>${escapeHtml(name)}</span><strong>${row.qty} / ${row.stock}</strong></div>`).join("") || `<div class="empty">暂无口味数据。</div>`}</section>
       <section><h3>当前售罄</h3>${soldOut.length ? soldOut.slice(0, 10).map(product => `<div class="performance-row danger"><span>${escapeHtml(productDisplayName(product))}</span><strong>${product.sold_out_at ? new Date(product.sold_out_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "时间待记录"}</strong></div>`).join("") : `<div class="empty">当前没有售罄商品。</div>`}</section>
       <section><h3>连续无销售</h3>${noSales.length ? noSales.slice(0, 10).map(row => `<div class="performance-row"><span>${escapeHtml(productDisplayName(row.product))}</span><strong>${row.days === null ? "从未销售" : `${row.days} 天`}</strong></div>`).join("") : `<div class="empty">没有连续 3 天无销售商品。</div>`}</section>
@@ -1010,6 +1111,18 @@
           <input name="track_inventory" type="checkbox" ${product.track_inventory !== false ? "checked" : ""}>
           跟踪库存
         </label>
+        <label class="soldout-check">
+          <input name="is_favorite" type="checkbox" ${product.is_favorite ? "checked" : ""}>
+          收银常用
+        </label>
+        <label class="soldout-check">
+          <input name="is_upsell_product" type="checkbox" ${product.is_upsell_product ? "checked" : ""}>
+          推荐商品
+        </label>
+        <label>
+          推荐优先级
+          <input class="field-input" name="upsell_priority" type="number" step="1" value="${Number(product.upsell_priority || 0)}">
+        </label>
         <button class="button primary" type="submit">保存</button>
         ${isMatrixProduct ? "" : `<button class="button danger" type="button" data-delete-product="${escapeAttr(product.id)}">删除</button>`}
       </form>
@@ -1051,7 +1164,10 @@
         <div class="movement-item">
           <div>
             <strong>${escapeHtml(item.product_name)}</strong>
-            <small>${escapeHtml(item.day)} ${escapeHtml(item.time_text)} · ${reasonText(reason)}${item.note ? ` · ${escapeHtml(item.note)}` : ""}</small>
+            <small>${escapeHtml(item.business_date || item.day)} ${escapeHtml(item.time_text)} · ${reasonText(reason)}${item.note ? ` · ${escapeHtml(item.note)}` : ""}</small>
+            ${p1Enabled && POS.canManage(currentRole) && item.movement_type === "waste" && !item.approved_by ? `<button class="mini-button" type="button" data-approve-waste="${item.movement_id}">审核报损</button>` : ""}
+            ${item.movement_type === "waste" && item.approved_by ? `<small>已审核</small>` : ""}
+            ${p1Enabled && currentRole === "owner" && item.movement_id && !item.reversed_movement_id && !["sale", "gift", "return"].includes(item.movement_type) ? `<button class="mini-button" type="button" data-reverse-movement="${item.movement_id}">撤销这次调整</button>` : ""}
           </div>
           <div class="movement-numbers">
             <strong class="${tone}">${sign}${change}</strong>
@@ -1060,6 +1176,129 @@
         </div>
       `;
     }).join("");
+  }
+
+  function renderBasketAnalysis(activeOrders) {
+    if (!el.basketAnalysis) return;
+    const baskets = activeOrders.map(order => {
+      const qty = (order.order_items || []).reduce((sum, item) => sum + itemQty(item), 0);
+      const categories = new Set((order.order_items || []).map(item => itemCategory(item, productById(item.product_id))));
+      const flavors = (order.order_items || []).filter(item => itemCategory(item, productById(item.product_id)) === "icecream").map(item => item.subcategory || item.product_name || item.name);
+      return { qty, categories, flavors };
+    });
+    const total = baskets.length || 1;
+    const one = baskets.filter(row => row.qty === 1).length;
+    const two = baskets.filter(row => row.qty === 2).length;
+    const three = baskets.filter(row => row.qty >= 3).length;
+    const mixed = baskets.filter(row => row.categories.has("icecream") && row.categories.has("merchandise")).length;
+    const iceOnly = baskets.filter(row => row.categories.size === 1 && row.categories.has("icecream")).length;
+    const merchOnly = baskets.filter(row => row.categories.size === 1 && row.categories.has("merchandise")).length;
+    const shown = upsellEvents.filter(row => !row.shown_at || inActiveDateRange(String(row.shown_at).slice(0, 10))).length;
+    const added = upsellEvents.filter(row => row.added_to_cart && (!row.shown_at || inActiveDateRange(String(row.shown_at).slice(0, 10)))).length;
+    const productCombos = new Map();
+    const flavorCombos = new Map();
+    activeOrders.forEach(order => {
+      const names = [...new Set((order.order_items || []).filter(item => item.item_type !== "gift").map(item => item.product_name || item.name).filter(Boolean))].sort();
+      if (names.length > 1) productCombos.set(names.join(" + "), (productCombos.get(names.join(" + ")) || 0) + 1);
+      const flavors = [...new Set((order.order_items || []).filter(item => itemCategory(item, productById(item.product_id)) === "icecream").map(item => item.subcategory || item.product_name || item.name).filter(Boolean))].sort();
+      if (flavors.length > 1) flavorCombos.set(flavors.join(" + "), (flavorCombos.get(flavors.join(" + ")) || 0) + 1);
+    });
+    const topCombo = [...productCombos.entries()].sort((a, b) => b[1] - a[1])[0];
+    const topFlavorCombo = [...flavorCombos.entries()].sort((a, b) => b[1] - a[1])[0];
+    const cards = [
+      ["1 件订单", one, `${Math.round(one / total * 100)}%`],
+      ["2 件订单", two, `${Math.round(two / total * 100)}%`],
+      ["3 件以上", three, `${Math.round(three / total * 100)}%`],
+      ["冰淇淋＋文创", mixed, `${Math.round(mixed / total * 100)}%`],
+      ["仅冰淇淋", iceOnly, `${Math.round(iceOnly / total * 100)}%`],
+      ["仅文创", merchOnly, `${Math.round(merchOnly / total * 100)}%`],
+      ["推荐转化", added, shown ? `${Math.round(added / shown * 100)}%` : "暂无展示"]
+    ];
+    el.basketAnalysis.innerHTML = `${cards.map(([label, value, note]) => `<div><span>${label}</span><strong>${value}</strong><small>${note}</small></div>`).join("")}
+      <div class="basket-combo"><span>高频商品组合</span><strong>${escapeHtml(topCombo ? topCombo[0] : "暂无")}</strong><small>${topCombo ? `${topCombo[1]} 单` : "需要两件以上订单"}</small></div>
+      <div class="basket-combo"><span>高频口味组合</span><strong>${escapeHtml(topFlavorCombo ? topFlavorCombo[0] : "暂无")}</strong><small>${topFlavorCombo ? `${topFlavorCombo[1]} 单` : "需要多口味订单"}</small></div>`;
+  }
+
+  function renderP1Management() {
+    const manager = POS.canManage(currentRole);
+    if (el.currentRoleText) el.currentRoleText.textContent = p1Enabled ? `当前权限：${POS.roleLabel(currentRole)}` : "尚未执行 P1 数据库升级";
+
+    const shiftCashierQuery = String(el.shiftCashierFilter && el.shiftCashierFilter.value || "").trim().toLowerCase();
+    const shiftStatusQuery = String(el.shiftStatusFilter && el.shiftStatusFilter.value || "");
+    const visibleShifts = shifts
+      .filter(row => inActiveDateRange(row.business_date))
+      .filter(row => !shiftCashierQuery || String(row.cashier_name || "").toLowerCase().includes(shiftCashierQuery))
+      .filter(row => !shiftStatusQuery || row.status === shiftStatusQuery)
+      .slice(0, 60);
+    if (el.shiftsList) el.shiftsList.innerHTML = visibleShifts.length ? visibleShifts.map(row => `
+      <div class="business-row">
+        <div><strong>${escapeHtml(row.business_date)} · ${escapeHtml(row.cashier_name || "收银员")}</strong><span>${row.status === "open" ? "未交班" : `${String(row.opened_at || "").slice(11, 16)}–${String(row.closed_at || "").slice(11, 16)}`} · ${row.order_count || 0} 单 / ${row.item_count || 0} 件</span><span>退款 ${POS.money(row.refund_total || 0)} · 取消 ${row.cancelled_order_count || 0} · ${escapeHtml(row.closing_note || "无交班备注")}</span></div>
+        <div><strong>现金 ${POS.money(row.expected_cash || 0)}</strong><span>实际 ${POS.money(row.actual_cash || 0)} · 差额 ${POS.money(row.cash_difference || 0)}</span><span>QR 差额 ${POS.money(row.qr_difference || 0)} · 转账差额 ${POS.money(row.transfer_difference || 0)}</span></div>
+      </div>`).join("") : `<div class="empty">当前范围还没有班次记录。</div>`;
+
+    if (el.promotionGiftProduct) {
+      const currentValue = el.promotionGiftProduct.value;
+      el.promotionGiftProduct.innerHTML = `<option value="">不送赠品</option>${products.filter(product => product.is_active !== false && product.product_id).map(product => `<option value="${escapeAttr(product.product_id)}">${escapeHtml(productDisplayName(product))}</option>`).join("")}`;
+      el.promotionGiftProduct.value = currentValue;
+    }
+    if (el.promotionEligibleProduct) {
+      const currentValue = el.promotionEligibleProduct.value;
+      el.promotionEligibleProduct.innerHTML = `<option value="">任意商品</option>${products.filter(product => product.is_active !== false && product.product_id).map(product => `<option value="${escapeAttr(product.product_id)}">${escapeHtml(productDisplayName(product))}</option>`).join("")}`;
+      el.promotionEligibleProduct.value = currentValue;
+    }
+    if (el.promotionForm) Array.from(el.promotionForm.elements).forEach(field => { field.disabled = !manager; });
+    const activeSalesOrders = orders.filter(order => order.is_test !== true && POS.isRevenueOrder(order));
+    const baselineOrders = activeSalesOrders.filter(order => !order.promotion_id);
+    const baselineAverage = baselineOrders.length ? baselineOrders.reduce((sum, order) => sum + orderAmount(order), 0) / baselineOrders.length : 0;
+    const baselineItems = baselineOrders.length ? baselineOrders.reduce((sum, order) => sum + (order.order_items || []).reduce((part, item) => part + itemQty(item), 0), 0) / baselineOrders.length : 0;
+    if (el.promotionsList) el.promotionsList.innerHTML = promotions.length ? promotions.map(row => {
+      const uses = promotionUsage.filter(usage => usage.promotion_id === row.promotion_id);
+      const useOrderIds = new Set(uses.map(usage => usage.order_id));
+      const promoOrders = activeSalesOrders.filter(order => useOrderIds.has(order.id));
+      const promoSales = promoOrders.reduce((sum, order) => sum + orderAmount(order), 0);
+      const promoAverage = promoOrders.length ? promoSales / promoOrders.length : 0;
+      const promoItems = promoOrders.length ? promoOrders.reduce((sum, order) => sum + (order.order_items || []).reduce((part, item) => part + itemQty(item), 0), 0) / promoOrders.length : 0;
+      const discounts = uses.reduce((sum, usage) => sum + Number(usage.discount_amount || 0), 0);
+      const gifts = uses.reduce((sum, usage) => sum + Number(usage.gift_quantity || 0), 0);
+      const hourMap = new Map();
+      promoOrders.forEach(order => hourMap.set(orderHour(order), (hourMap.get(orderHour(order)) || 0) + 1));
+      const peakHour = [...hourMap.entries()].sort((a, b) => b[1] - a[1])[0];
+      return `
+      <div class="business-row">
+        <div><strong>${escapeHtml(row.promotion_name)}</strong><span>${escapeHtml(row.promotion_code)} · ${escapeHtml(row.promotion_type)} · ${uses.length} 单 · 销售 ${POS.money(promoSales)} · 折扣 ${POS.money(discounts)} · 赠品 ${gifts}</span><span>促销客单 ${POS.money(Math.round(promoAverage))} · 非促销客单 ${POS.money(Math.round(baselineAverage))} · 每单件数 ${promoItems.toFixed(2)} / ${baselineItems.toFixed(2)}${peakHour ? ` · 高峰 ${String(peakHour[0]).padStart(2, "0")}:00` : ""}</span></div>
+        <div><strong>${row.is_active ? "生效中" : "已停用"}</strong>${manager ? `<button class="mini-button" type="button" data-toggle-promotion="${row.promotion_id}">${row.is_active ? "停用" : "启用"}</button>` : ""}</div>
+      </div>`;
+    }).join("") : `<div class="empty">还没有促销规则。</div>`;
+
+    const visibleRecs = reconciliations.filter(row => inActiveDateRange(row.business_date)).slice(0, 60);
+    if (el.reconciliationList) el.reconciliationList.innerHTML = visibleRecs.length ? visibleRecs.map(row => `
+      <div class="business-row">
+        <div><strong>${escapeHtml(row.business_date)} · ${escapeHtml(row.status)}</strong><span>${row.shift_count} 个班次 · ${row.open_shifts} 个未关闭 · 销售 ${POS.money(row.total_sales || 0)}</span><span>退款 ${POS.money(row.refund_total || 0)} · 折扣 ${POS.money(row.discount_total || 0)} · 赠品 ${row.gift_quantity || 0} · 取消 ${row.cancelled_orders || 0}</span></div>
+        <div><strong>现金差额 ${POS.money(row.cash_difference || 0)}</strong><span>QR ${POS.money(row.qr_expected || 0)} / ${POS.money(row.qr_actual || 0)} · 差额 ${POS.money(row.qr_difference || 0)}</span><span>转账 ${POS.money(row.transfer_expected || 0)} / ${POS.money(row.transfer_actual || 0)} · 混合 ${POS.money(row.mixed_total || 0)} · 其他 ${POS.money(row.other_total || 0)}</span>${manager && row.status !== "reviewed" ? `<button class="mini-button" data-review-reconciliation="${row.business_date}">确认审核</button>` : ""}</div>
+      </div>`).join("") : `<div class="empty">点击“刷新所选日期”生成对账结果。</div>`;
+
+    if (el.dataQualityList) el.dataQualityList.innerHTML = dataQualityIssues.length ? dataQualityIssues.map(row => `<div class="alert-item ${escapeAttr(row.severity)}"><strong>${escapeHtml(row.issue_type)}</strong><span>${escapeHtml(row.detail || row.record_id)}</span></div>`).join("") : `<div class="empty">当前未发现结构性数据问题。</div>`;
+    if (el.rolesList) el.rolesList.innerHTML = userProfiles.length ? userProfiles.map(row => `<div class="business-row"><div><strong>${escapeHtml(row.display_name || row.email || row.user_id)}</strong><span>${row.is_active === false ? "已停用" : "可用"}</span></div>${currentRole === "owner" ? `<select class="field-input role-select" data-role-user="${row.user_id}">${["owner", "manager", "cashier", "viewer"].map(role => `<option value="${role}" ${row.role === role ? "selected" : ""}>${POS.roleLabel(role)}</option>`).join("")}</select>` : `<strong>${POS.roleLabel(row.role)}</strong>`}</div>`).join("") : `<div class="empty">当前账号只能查看自己的权限。</div>`;
+    if (el.auditList) el.auditList.innerHTML = auditLogs.length ? auditLogs.slice(0, 40).map(row => `<div class="business-row"><div><strong>${escapeHtml(row.action || row.action_type || "操作")}</strong><span>${escapeHtml(row.entity_type || "")} · ${escapeHtml(String(row.created_at || "").replace("T", " ").slice(0, 16))}</span></div><span>${escapeHtml(row.reason || row.note || "")}</span></div>`).join("") : `<div class="empty">无可查看的操作日志。</div>`;
+    if (p1Enabled) {
+      const allowedViews = currentRole === "cashier"
+        ? new Set(["stock"])
+        : currentRole === "viewer"
+          ? new Set(["home", "analytics", "inventory", "orders", "business", "shifts"])
+          : new Set(Object.values(adminViewByHash).filter(view => view !== "closeout"));
+      document.querySelectorAll("[data-admin-nav]").forEach(link => {
+        link.hidden = !allowedViews.has(link.dataset.adminNav);
+      });
+      [el.exportOrdersCsv, el.exportItemsCsv, el.exportInventoryCsv, el.exportShiftsCsv,
+        el.exportPaymentsCsv, el.exportPromotionsCsv, el.exportPromotionUsageCsv,
+        el.exportUpsellCsv, el.exportOperationsCsv, el.exportXlsx].filter(Boolean).forEach(button => {
+        button.hidden = currentRole !== "owner";
+      });
+      if (el.businessDayForm) Array.from(el.businessDayForm.elements).forEach(field => { field.disabled = !manager; });
+      if (!allowedViews.has(currentAdminView())) {
+        window.location.hash = currentRole === "cashier" ? "#stockManagement" : "#home";
+      }
+    }
   }
 
   function render() {
@@ -1088,12 +1327,18 @@
     const categoryStats = Object.fromEntries(POS.standardCategories.map(category => [category, { qty: 0, amount: 0 }]));
 
     activeOrders.forEach(order => {
-      const method = POS.normalizePaymentMethod(order.payment_method);
       const amount = orderAmount(order);
-      if (method === "cash") cashSales += amount;
-      if (method === "qr") qrSales += amount;
-      if (!["cash", "qr"].includes(method)) otherPaymentSales += amount;
-      addToMap(paymentMap, POS.paymentLabel(method), 1, amount);
+      const paymentRows = Array.isArray(order.payments) && order.payments.length
+        ? order.payments.filter(row => row.payment_status !== "refunded")
+        : [{ payment_method: order.payment_method, amount }];
+      paymentRows.forEach(row => {
+        const method = POS.normalizePaymentMethod(row.payment_method);
+        const paid = Number(row.amount || 0);
+        if (method === "cash") cashSales += paid;
+        else if (method === "qr") qrSales += paid;
+        else otherPaymentSales += paid;
+        addToMap(paymentMap, POS.paymentLabel(method), 1, paid);
+      });
       order.order_items.forEach(item => {
         const product = productById(item.product_id);
         const qty = itemQty(item);
@@ -1163,10 +1408,15 @@
     }).length;
     const cancelledOrders = filteredOrders(true).filter(order => ["cancelled", "void"].includes(order.status));
     const refundAmount = filteredOrders(true).filter(order => order.status === "refunded").reduce((sum, order) => sum + Number(order.refund_amount || orderAmount(order)), 0);
+    const discountAmount = activeOrders.reduce((sum, order) => sum + Number(order.discount_amount || 0), 0);
+    const giftQuantity = activeOrders.reduce((sum, order) => sum + (order.order_items || [])
+      .filter(item => ["gift", "complimentary"].includes(item.item_type))
+      .reduce((part, item) => part + itemQty(item), 0), 0);
     if (el.avgItemsPerOrder) el.avgItemsPerOrder.textContent = summaryMetrics.avgItems.toFixed(2);
     if (el.singleItemOrderRate) el.singleItemOrderRate.textContent = `${activeOrders.length ? Math.round(singleOrders / activeOrders.length * 100) : 0}%`;
     if (el.mixedOrderRate) el.mixedOrderRate.textContent = `${activeOrders.length ? Math.round(mixedOrders / activeOrders.length * 100) : 0}%`;
     if (el.cancelRefundSummary) el.cancelRefundSummary.textContent = `${cancelledOrders.length} 单 / ${POS.money(refundAmount)}`;
+    if (el.discountGiftSummary) el.discountGiftSummary.textContent = `折扣 ${POS.money(discountAmount)} · 赠品 ${giftQuantity}`;
     if (el.cashSales) el.cashSales.textContent = `现金 ${POS.money(cashSales)}`;
     if (el.paymentDetail) el.paymentDetail.textContent = `扫码 ${POS.money(qrSales)} · 其他 ${POS.money(otherPaymentSales)}`;
     const summaryDay = activeRange === "date" ? selectedDate : todayKey;
@@ -1186,6 +1436,8 @@
     renderProductPerformance(activeOrders);
     renderOperationsAlerts(summaryDay, activeOrders);
 
+    const manager = !p1Enabled || POS.canManage(currentRole);
+    const canRecordWaste = !p1Enabled || currentRole !== "viewer";
     const visibleProducts = filteredProducts();
     renderStockOverview(visibleProducts);
     el.stockSummary.innerHTML = visibleProducts.length ? visibleProducts.map(product => {
@@ -1210,38 +1462,39 @@
           <span class="stock-pill ${soldOut ? "danger" : low ? "warning" : ""}" data-stock-state="${escapeAttr(product.id)}">${product.track_inventory === false ? "无需库存" : soldOut ? "售空" : low ? "低库存" : "可售"}</span>
         </div>
         <div class="stock-adjust" aria-label="${escapeAttr(product.name)}快捷调库存">
-          <button class="mini-button stock-step danger" data-stock-step="${escapeAttr(product.id)}" data-step="-1">-1</button>
-          <button class="mini-button stock-step" data-stock-step="${escapeAttr(product.id)}" data-step="1">+1</button>
-          <button class="mini-button stock-step" data-stock-step="${escapeAttr(product.id)}" data-step="5">+5</button>
-          <button class="mini-button stock-step" data-stock-step="${escapeAttr(product.id)}" data-step="10">+10</button>
-          <button class="mini-button stock-step" data-stock-zero="${escapeAttr(product.id)}">归零</button>
+          ${canRecordWaste ? `<button class="mini-button stock-step danger" data-stock-step="${escapeAttr(product.id)}" data-step="-1">-1</button>` : ""}
+          ${manager ? `<button class="mini-button stock-step" data-stock-step="${escapeAttr(product.id)}" data-step="1">+1</button><button class="mini-button stock-step" data-stock-step="${escapeAttr(product.id)}" data-step="5">+5</button><button class="mini-button stock-step" data-stock-step="${escapeAttr(product.id)}" data-step="10">+10</button><button class="mini-button stock-step" data-stock-zero="${escapeAttr(product.id)}">归零</button>` : ""}
         </div>
         <div class="stock-controls">
-          <input class="field-input stock-input" data-stock-input="${escapeAttr(product.id)}" type="number" min="0" step="1" value="${product.stock}" aria-label="${escapeAttr(product.name)}库存">
+          <input class="field-input stock-input" data-stock-input="${escapeAttr(product.id)}" type="number" min="0" ${manager ? "" : `max="${product.stock}"`} step="1" value="${product.stock}" aria-label="${escapeAttr(product.name)}库存" ${canRecordWaste ? "" : "disabled"}>
           <select class="field-input stock-reason" data-stock-reason="${escapeAttr(product.id)}" aria-label="${escapeAttr(product.name)}库存原因">
-            <option value="restock">补货</option>
-            <option value="adjustment">盘点调整</option>
-            <option value="waste">损耗</option>
-            <option value="sample">试吃</option>
+            ${manager ? `<option value="restock">补货</option><option value="adjustment">盘点调整</option>` : ""}
+            ${p1Enabled ? `<option value="waste:melted">融化</option><option value="waste:damaged_packaging">包装损坏</option><option value="waste:production_issue">制作失败</option><option value="waste:expired">过期</option><option value="waste:customer_return">顾客退换</option><option value="waste:staff_error">员工操作失误</option><option value="waste:sampling">试吃</option><option value="waste:photo_shoot">拍摄使用</option><option value="waste:quality_issue">品质问题</option><option value="waste:other">其他</option>` : `<option value="waste">损耗</option><option value="sample">试吃</option>`}
           </select>
           <input class="field-input stock-note" data-stock-note="${escapeAttr(product.id)}" placeholder="备注">
-          <label class="compact-check">
+          ${manager ? `<label class="compact-check">
             <input data-stock-soldout="${escapeAttr(product.id)}" type="checkbox" ${product.sold_out ? "checked" : ""}>
             售罄
-          </label>
-          <button class="mini-button ${product.is_active === false ? "active" : ""}" data-toggle-active="${escapeAttr(product.id)}">
+          </label><button class="mini-button ${product.is_active === false ? "active" : ""}" data-toggle-active="${escapeAttr(product.id)}">
             ${product.is_active === false ? "重新上架" : "下架"}
-          </button>
-          <button class="mini-button primary" data-save-stock="${escapeAttr(product.id)}">保存库存</button>
+          </button>` : ""}
+          ${canRecordWaste ? `<button class="mini-button primary" data-save-stock="${escapeAttr(product.id)}">保存库存</button>` : ""}
         </div>
       </article>
     `;
     }).join("") : `<div class="empty">当前筛选下没有产品。</div>`;
 
-    const tableOrders = orders.filter(order => inActiveDateRange(order.day));
+    const productQuery = String(el.orderProductFilter && el.orderProductFilter.value || "").trim().toLowerCase();
+    const paymentQuery = String(el.orderPaymentFilter && el.orderPaymentFilter.value || "");
+    const cashierQuery = String(el.orderCashierFilter && el.orderCashierFilter.value || "").trim().toLowerCase();
+    const tableOrders = orders.filter(order => inActiveDateRange(order.day))
+      .filter(order => !productQuery || (order.order_items || []).some(item => String(item.product_name || item.name || "").toLowerCase().includes(productQuery)))
+      .filter(order => !paymentQuery || POS.normalizePaymentMethod(order.payment_method) === paymentQuery)
+      .filter(order => !cashierQuery || String(order.cashier || "").toLowerCase().includes(cashierQuery));
     el.ordersBody.innerHTML = tableOrders.length ? tableOrders.map(order => {
       const items = order.order_items.map(item => `${item.product_name || item.name} x${itemQty(item)}`).join("、");
-      const canCancel = POS.isRevenueOrder(order);
+      const canCancel = !p1Enabled && POS.isRevenueOrder(order);
+      const canRefund = p1Enabled && POS.canManage(currentRole) && POS.isRevenueOrder(order) && order.shift_id;
       return `
         <tr>
           <td>${order.day}</td>
@@ -1250,7 +1503,7 @@
           <td>${POS.paymentLabel(order.payment_method)}</td>
           <td><strong>${POS.money(orderAmount(order))}</strong></td>
           <td>${order.is_test ? '<span class="status-tag test">测试</span> ' : ""}${statusLabel(order.status)}${order.cancel_reason ? `<small class="order-reason">${escapeHtml(order.cancel_reason)}</small>` : ""}</td>
-          <td>${canCancel ? `<button class="mini-button" data-void="${order.id}">取消</button>` : ""}</td>
+          <td>${canCancel ? `<button class="mini-button" data-void="${order.id}">取消</button>` : ""}${canRefund ? ` <button class="mini-button danger" data-refund="${order.id}">整单退款</button>` : ""}</td>
         </tr>
       `;
     }).join("") : `<tr><td colspan="7">当前范围内还没有订单。</td></tr>`;
@@ -1259,6 +1512,8 @@
     renderInventoryMovements();
     renderCloseout();
     renderBusinessDays();
+    renderBasketAnalysis(activeOrders);
+    renderP1Management();
   }
 
   async function toggleSoldOut(productId) {
@@ -1359,6 +1614,37 @@
     POS.setBusy(button, true, "保存中");
     let result;
     try {
+      const product = products.find(item => item.id === productId);
+      const delta = product ? Math.floor(stock) - Number(product.stock || 0) : 0;
+      if (p1Enabled && product) {
+        if (delta !== 0) {
+          const selectedReason = reason ? reason.value : "adjustment";
+          const [reasonGroup, reasonDetail] = selectedReason.split(":");
+          const movementType = reasonGroup === "restock" ? "received"
+            : reasonGroup === "waste" || reasonGroup === "sample" ? "waste"
+              : delta > 0 ? "adjustment_in" : "adjustment_out";
+          const reasonCode = reasonGroup === "restock" ? "received"
+            : reasonGroup === "sample" ? "sampling"
+              : reasonGroup === "waste" ? (reasonDetail || "quality_issue") : "count_adjustment";
+          result = await client.rpc("record_inventory_p1", {
+            p_product_id: productId,
+            p_movement_type: movementType,
+            p_quantity: Math.abs(delta),
+            p_reason_code: reasonCode,
+            p_note: note ? note.value.trim() : ""
+          });
+          if (result.error) throw result.error;
+        }
+        // The inventory RPC already updates stock and availability atomically.
+        // A zero-quantity save is the only case that needs a direct availability toggle.
+        if (delta === 0) {
+          result = await client.from("products").update({
+            sold_out: Boolean(soldOut && soldOut.checked),
+            is_available: !(soldOut && soldOut.checked) && stock > 0,
+            updated_at: new Date().toISOString()
+          }).eq("id", productId);
+        }
+      } else {
       const payload = {
         p_product_id: productId,
         p_new_stock: Math.floor(stock),
@@ -1380,6 +1666,7 @@
           p_time_text: payload.p_time_text,
           p_day: payload.p_day
         });
+      }
       }
     } catch (error) {
       POS.showToast(error.message || "库存保存失败");
@@ -1488,6 +1775,9 @@
       is_active: formData.has("is_active"),
       is_available: formData.has("is_available"),
       track_inventory: formData.has("track_inventory"),
+      is_favorite: formData.has("is_favorite"),
+      is_upsell_product: formData.has("is_upsell_product"),
+      upsell_priority: Number(formData.get("upsell_priority") || 0),
       is_deleted: false,
       updated_at: new Date().toISOString()
     };
@@ -1669,6 +1959,35 @@
     await refresh();
   }
 
+  async function refundOrder(orderId) {
+    if (!POS.canManage(currentRole)) return POS.showToast("需要 Manager / Owner 权限");
+    const reason = window.prompt("请输入整单退款原因。退款后会恢复本单库存。", "顾客退款");
+    if (reason === null) return;
+    if (reason.trim().length < 2) return POS.showToast("请填写退款原因");
+    const result = await client.rpc("refund_order_p1", { p_order_id: orderId, p_reason: reason.trim() });
+    if (result.error) return POS.showToast(result.error.message || "退款失败");
+    POS.showToast("整单退款完成，库存已恢复");
+    await refresh(currentSession);
+  }
+
+  async function reverseInventoryMovement(movementId) {
+    if (currentRole !== "owner") return;
+    const reason = window.prompt("请输入撤销原因。原流水不会删除，系统会生成一条反向流水。", "录入错误");
+    if (reason === null || reason.trim().length < 2) return;
+    const result = await client.rpc("reverse_inventory_movement_p1", { p_movement_id: movementId, p_reason: reason.trim() });
+    if (result.error) return POS.showToast(result.error.message || "撤销失败");
+    POS.showToast("已生成反向库存流水");
+    await refresh(currentSession);
+  }
+
+  async function approveWaste(movementId) {
+    if (!POS.canManage(currentRole)) return POS.showToast("需要 Manager / Owner 权限");
+    const result = await client.rpc("approve_inventory_movement_p1", { p_movement_id: movementId });
+    if (result.error) return POS.showToast(result.error.message || "报损审核失败");
+    POS.showToast("报损已审核");
+    await refresh(currentSession);
+  }
+
   async function saveCloseout() {
     const expected = todayCashExpected();
     const actual = Number(el.actualCash.value || 0);
@@ -1720,7 +2039,14 @@
 
   function renderBusinessDays() {
     if (!el.businessDayHistory) return;
-    const rows = businessDays.filter(row => inActiveDateRange(row.day)).slice(0, 31);
+    const source = p1Enabled ? dailyOperations.map(row => ({
+      ...row,
+      day: row.business_date,
+      status: row.operation_status,
+      activity: row.special_event,
+      exception_note: [row.stock_issue, row.equipment_issue, row.closed_reason, row.operation_note].filter(Boolean).join(" · ")
+    })) : businessDays;
+    const rows = source.filter(row => inActiveDateRange(row.day)).slice(0, 31);
     el.businessDayHistory.innerHTML = rows.length ? rows.map(row => `
       <div class="business-day-row">
         <div><strong>${escapeHtml(row.day)} ${weekdayLabel(row.day)}</strong><span>${escapeHtml(row.weather || "天气未填")} · ${escapeHtml(row.activity || "无活动记录")}</span></div>
@@ -1743,8 +2069,25 @@
       updated_at: new Date().toISOString()
     };
     const button = form.querySelector("button[type='submit']");
+    if (p1Enabled && payload.status === "closed" && payload.exception_note.length < 2) {
+      POS.showToast("未营业时请填写休息原因");
+      return;
+    }
     POS.setBusy(button, true, "保存中");
-    const result = await client.from("business_days").upsert(payload);
+    const result = p1Enabled
+      ? await client.from("daily_operations").upsert({
+        business_date: payload.day,
+        operation_status: payload.status,
+        planned_open_time: payload.planned_open_time,
+        planned_close_time: payload.planned_close_time,
+        weather: payload.weather || "other",
+        special_event: payload.activity,
+        closed_reason: payload.status === "closed" ? payload.exception_note : "",
+        operation_note: payload.status === "closed" ? "" : payload.exception_note,
+        updated_by: currentSession && currentSession.user.id,
+        updated_at: payload.updated_at
+      })
+      : await client.from("business_days").upsert(payload);
     POS.setBusy(button, false);
     if (result.error) {
       POS.showToast(result.error.message && /business_days|schema cache/i.test(result.error.message) ? "请先执行经营管理升级 SQL" : result.error.message);
@@ -1765,6 +2108,164 @@
     URL.revokeObjectURL(url);
   }
 
+  function xmlEscape(value) {
+    return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function columnName(index) {
+    let name = "";
+    for (let value = index + 1; value > 0; value = Math.floor((value - 1) / 26)) {
+      name = String.fromCharCode(65 + (value - 1) % 26) + name;
+    }
+    return name;
+  }
+
+  function sheetXml(rows) {
+    const body = rows.map((row, rowIndex) => `<row r="${rowIndex + 1}">${row.map((value, columnIndex) => {
+      const ref = `${columnName(columnIndex)}${rowIndex + 1}`;
+      if (typeof value === "number" && Number.isFinite(value)) return `<c r="${ref}"><v>${value}</v></c>`;
+      if (typeof value === "boolean") return `<c r="${ref}" t="b"><v>${value ? 1 : 0}</v></c>`;
+      return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(value)}</t></is></c>`;
+    }).join("")}</row>`).join("");
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${body}</sheetData></worksheet>`;
+  }
+
+  const crcTable = (() => {
+    const table = new Uint32Array(256);
+    for (let index = 0; index < 256; index += 1) {
+      let value = index;
+      for (let bit = 0; bit < 8; bit += 1) value = (value & 1) ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+      table[index] = value >>> 0;
+    }
+    return table;
+  })();
+
+  function crc32(bytes) {
+    let crc = 0xffffffff;
+    bytes.forEach(byte => { crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8); });
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+
+  function zipHeader(length) {
+    const bytes = new Uint8Array(length);
+    const view = new DataView(bytes.buffer);
+    return { bytes, view };
+  }
+
+  function createZip(files) {
+    const encoder = new TextEncoder();
+    const localParts = [];
+    const centralParts = [];
+    let offset = 0;
+    Object.entries(files).forEach(([name, content]) => {
+      const nameBytes = encoder.encode(name);
+      const data = encoder.encode(content);
+      const crc = crc32(data);
+      const local = zipHeader(30);
+      local.view.setUint32(0, 0x04034b50, true);
+      local.view.setUint16(4, 20, true);
+      local.view.setUint16(6, 0x0800, true);
+      local.view.setUint16(8, 0, true);
+      local.view.setUint16(10, 0, true);
+      local.view.setUint16(12, 33, true);
+      local.view.setUint32(14, crc, true);
+      local.view.setUint32(18, data.length, true);
+      local.view.setUint32(22, data.length, true);
+      local.view.setUint16(26, nameBytes.length, true);
+      localParts.push(local.bytes, nameBytes, data);
+
+      const central = zipHeader(46);
+      central.view.setUint32(0, 0x02014b50, true);
+      central.view.setUint16(4, 20, true);
+      central.view.setUint16(6, 20, true);
+      central.view.setUint16(8, 0x0800, true);
+      central.view.setUint16(10, 0, true);
+      central.view.setUint16(12, 0, true);
+      central.view.setUint16(14, 33, true);
+      central.view.setUint32(16, crc, true);
+      central.view.setUint32(20, data.length, true);
+      central.view.setUint32(24, data.length, true);
+      central.view.setUint16(28, nameBytes.length, true);
+      central.view.setUint32(42, offset, true);
+      centralParts.push(central.bytes, nameBytes);
+      offset += local.bytes.length + nameBytes.length + data.length;
+    });
+    const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+    const end = zipHeader(22);
+    end.view.setUint32(0, 0x06054b50, true);
+    end.view.setUint16(8, Object.keys(files).length, true);
+    end.view.setUint16(10, Object.keys(files).length, true);
+    end.view.setUint32(12, centralSize, true);
+    end.view.setUint32(16, offset, true);
+    return new Blob([...localParts, ...centralParts, end.bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  }
+
+  function workbookData() {
+    const orderRows = [["date", "time", "order_id", "total_amount", "payment_method", "status", "cashier", "items_summary"]];
+    const itemRows = [["date", "time", "order_id", "product_id", "product_name", "category", "subcategory", "quantity", "unit_price", "subtotal", "payment_method", "status"]];
+    filteredOrders(true).forEach(order => {
+      orderRows.push([order.day, exportTime(order.time_text), order.id, orderAmount(order), POS.normalizePaymentMethod(order.payment_method), order.status || "paid", order.cashier || "", (order.order_items || []).map(item => `${item.product_name || item.name} x${itemQty(item)}`).join("、")]);
+      (order.order_items || []).forEach(item => {
+        const product = productById(item.product_id);
+        itemRows.push([order.day, exportTime(order.time_text), order.id, item.product_uid || item.product_id, item.product_name || item.name, itemCategory(item, product), item.subcategory || (product && product.subcategory) || "", itemQty(item), itemUnitPrice(item), itemSubtotal(item), POS.normalizePaymentMethod(order.payment_method), order.status || "paid"]);
+      });
+    });
+    const inventoryRows = [["date", "time", "product_id", "product_name", "category", "change_type", "quantity_change", "stock_before", "stock_after", "operator", "note"]];
+    filteredInventoryMovements().forEach(item => inventoryRows.push([item.business_date || item.day, exportTime(item.time_text), item.product_uid || item.product_id, item.product_name, POS.normalizeCategory(item.category), item.change_type || item.reason, item.quantity_change ?? item.change_qty ?? 0, item.stock_before ?? item.before_stock ?? 0, item.stock_after ?? item.after_stock ?? 0, item.operator || "", item.note || ""]));
+    const shiftRows = [["business_date", "shift_id", "cashier", "opened_at", "closed_at", "status", "opening_cash", "expected_cash", "actual_cash", "cash_difference", "qr_expected", "qr_actual", "transfer_expected", "transfer_actual", "order_count", "item_count", "difference_note"]];
+    shifts.filter(row => inActiveDateRange(row.business_date)).forEach(row => shiftRows.push([row.business_date, row.shift_id, row.cashier_name, row.opened_at, row.closed_at, row.status, row.opening_cash, row.expected_cash, row.actual_cash, row.cash_difference, row.qr_expected, row.qr_actual, row.transfer_expected, row.transfer_actual, row.order_count, row.item_count, row.difference_note]));
+    const paymentRows = [["payment_id", "order_id", "shift_id", "payment_method", "amount", "status", "reference_number", "paid_at"]];
+    payments.filter(row => { const order = orders.find(item => item.id === row.order_id); return !order || inActiveDateRange(order.day); }).forEach(row => paymentRows.push([row.payment_id, row.order_id, row.shift_id, row.payment_method, row.amount, row.payment_status, row.reference_number, row.paid_at]));
+    const promotionRows = [["promotion_id", "name", "code", "type", "minimum_quantity", "minimum_amount", "discount_value", "eligible_product_ids", "gift_product_id", "start_at", "end_at", "usage_count", "is_active"]];
+    promotions.forEach(row => promotionRows.push([row.promotion_id, row.promotion_name, row.promotion_code, row.promotion_type, row.minimum_quantity, row.minimum_amount, row.discount_value, JSON.stringify(row.eligible_product_ids || []), row.gift_product_id, row.start_at, row.end_at, row.usage_count, row.is_active]));
+    const usageRows = [["usage_id", "promotion_id", "order_id", "shift_id", "discount_amount", "gift_product_id", "gift_quantity", "used_at"]];
+    promotionUsage.forEach(row => { const order = orders.find(item => item.id === row.order_id); if (!order || inActiveDateRange(order.day)) usageRows.push([row.usage_id, row.promotion_id, row.order_id, row.shift_id, row.discount_amount, row.gift_product_id, row.gift_quantity, row.used_at]); });
+    const operationRows = [["business_date", "operation_status", "planned_open_time", "planned_close_time", "actual_open_time", "actual_close_time", "weather", "special_event", "staff_count", "stock_issue", "equipment_issue", "closed_reason", "operation_note"]];
+    dailyOperations.filter(row => inActiveDateRange(row.business_date)).forEach(row => operationRows.push([row.business_date, row.operation_status, row.planned_open_time, row.planned_close_time, row.actual_open_time, row.actual_close_time, row.weather, row.special_event, row.staff_count, row.stock_issue, row.equipment_issue, row.closed_reason, row.operation_note]));
+    const upsellRows = [["event_id", "shift_id", "order_id", "event_type", "recommended_product_id", "shown_at", "clicked_at", "added_to_cart", "dismissed"]];
+    upsellEvents.filter(row => !row.shown_at || inActiveDateRange(POS.dateKey(new Date(row.shown_at)))).forEach(row => upsellRows.push([row.event_id, row.shift_id, row.order_id, row.event_type, row.recommended_product_id, row.shown_at, row.clicked_at, row.added_to_cart, row.dismissed]));
+    return { Orders: orderRows, Order_Items: itemRows, Inventory: inventoryRows, Shifts: shiftRows, Payments: paymentRows, Promotions: promotionRows, Promotion_Usage: usageRows, Daily_Operations: operationRows, Upsell_Events: upsellRows };
+  }
+
+  function exportWorkbook() {
+    if (p1Enabled && currentRole !== "owner") return POS.showToast("只有 Owner 可以导出完整经营数据");
+    const sheets = workbookData();
+    const names = Object.keys(sheets);
+    const files = {
+      "[Content_Types].xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${names.map((name, index) => `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")}</Types>`,
+      "_rels/.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+      "xl/workbook.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${names.map((name, index) => `<sheet name="${xmlEscape(name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`).join("")}</sheets></workbook>`,
+      "xl/_rels/workbook.xml.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${names.map((name, index) => `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`).join("")}<Relationship Id="rId${names.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
+      "xl/styles.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Arial"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="1"><xf xfId="0"/></cellXfs></styleSheet>`
+    };
+    names.forEach((name, index) => { files[`xl/worksheets/sheet${index + 1}.xml`] = sheetXml(sheets[name]); });
+    const url = URL.createObjectURL(createZip(files));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `patuxai-pops-${rangeFileLabel()}.xlsx`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportTime(value) {
+    const text = String(value || "").trim();
+    if (!text || /(?:Z|[+-]\d{2}:?\d{2})$/i.test(text)) return text;
+    return `${text}+07:00`;
+  }
+
+  function exportTimestampTime(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return exportTime(date.toLocaleTimeString("en-GB", {
+      timeZone: "Asia/Vientiane",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false
+    }));
+  }
+
   function exportOrdersCsv() {
     const rows = [[
       "date", "time", "order_id", "total_amount", "payment_method", "status", "cashier", "items_summary"
@@ -1775,7 +2276,7 @@
       }).join("、");
       rows.push([
         order.day,
-        order.time_text,
+        exportTime(order.time_text),
         order.id,
         orderAmount(order),
         POS.normalizePaymentMethod(order.payment_method),
@@ -1797,9 +2298,9 @@
         const product = productById(item.product_id);
         rows.push([
           order.day,
-          order.time_text,
+          exportTime(order.time_text),
           order.id,
-          item.product_id,
+          item.product_uid || item.product_id,
           item.product_name || item.name,
           itemCategory(item, product),
           item.subcategory || (product && product.subcategory) || "",
@@ -1822,8 +2323,8 @@
     filteredInventoryMovements().forEach(item => {
       rows.push([
         item.day,
-        item.time_text,
-        item.product_id,
+        exportTime(item.time_text),
+        item.product_uid || item.product_id,
         item.product_name,
         POS.normalizeCategory(item.category),
         item.change_type || item.reason,
@@ -1835,6 +2336,120 @@
       ]);
     });
     downloadCsv(rows, `patuxai-pops-inventory-${rangeFileLabel()}.csv`);
+  }
+
+  function exportShiftsCsv() {
+    const rows = [["business_date", "shift_id", "cashier", "opened_at", "closed_at", "status", "opening_cash", "expected_cash", "actual_cash", "cash_difference", "qr_expected", "qr_actual", "transfer_expected", "transfer_actual", "order_count", "item_count", "difference_note"]];
+    shifts.filter(row => inActiveDateRange(row.business_date)).forEach(row => rows.push([row.business_date, row.shift_id, row.cashier_name, row.opened_at, row.closed_at, row.status, row.opening_cash, row.expected_cash, row.actual_cash, row.cash_difference, row.qr_expected, row.qr_actual, row.transfer_expected, row.transfer_actual, row.order_count, row.item_count, row.difference_note]));
+    downloadCsv(rows, `patuxai-pops-shifts-${rangeFileLabel()}.csv`);
+  }
+
+  function exportPaymentsCsv() {
+    const orderMap = new Map(orders.map(order => [order.id, order]));
+    const rows = [["date", "time", "payment_id", "order_id", "shift_id", "payment_method", "amount", "status", "reference_number", "paid_at"]];
+    payments.forEach(row => {
+      const order = orderMap.get(row.order_id);
+      const day = order ? order.day : String(row.created_at || "").slice(0, 10);
+      if (!inActiveDateRange(day)) return;
+      rows.push([day, order ? exportTime(order.time_text) : "", row.payment_id, row.order_id, row.shift_id, row.payment_method, row.amount, row.payment_status, row.reference_number, row.paid_at]);
+    });
+    downloadCsv(rows, `patuxai-pops-payments-${rangeFileLabel()}.csv`);
+  }
+
+  function exportPromotionsCsv() {
+    const rows = [["promotion_id", "name", "code", "type", "minimum_quantity", "minimum_amount", "discount_value", "eligible_product_ids", "gift_product_id", "start_at", "end_at", "usage_count", "is_active"]];
+    promotions.forEach(row => rows.push([row.promotion_id, row.promotion_name, row.promotion_code, row.promotion_type, row.minimum_quantity, row.minimum_amount, row.discount_value, JSON.stringify(row.eligible_product_ids || []), row.gift_product_id, row.start_at, row.end_at, row.usage_count, row.is_active]));
+    downloadCsv(rows, `patuxai-pops-promotions-${rangeFileLabel()}.csv`);
+  }
+
+  function exportPromotionUsageCsv() {
+    const orderMap = new Map(orders.map(order => [order.id, order]));
+    const rows = [["date", "time", "usage_id", "promotion_id", "order_id", "shift_id", "discount_amount", "gift_product_id", "gift_quantity", "used_at"]];
+    promotionUsage.forEach(row => {
+      const order = orderMap.get(row.order_id);
+      const day = order ? order.day : (row.used_at ? POS.dateKey(new Date(row.used_at)) : "");
+      if (!inActiveDateRange(day)) return;
+      rows.push([day, order ? exportTime(order.time_text) : "", row.usage_id, row.promotion_id, row.order_id, row.shift_id, row.discount_amount, row.gift_product_id, row.gift_quantity, row.used_at]);
+    });
+    downloadCsv(rows, `patuxai-pops-promotion-usage-${rangeFileLabel()}.csv`);
+  }
+
+  function exportUpsellCsv() {
+    const orderMap = new Map(orders.map(order => [order.id, order]));
+    const rows = [["date", "time", "event_id", "shift_id", "order_id", "event_type", "recommended_product_id", "shown_at", "clicked_at", "added_to_cart", "dismissed"]];
+    upsellEvents.forEach(row => {
+      const order = orderMap.get(row.order_id);
+      const day = order ? order.day : (row.shown_at ? POS.dateKey(new Date(row.shown_at)) : "");
+      if (!inActiveDateRange(day)) return;
+      rows.push([day, order ? exportTime(order.time_text) : exportTimestampTime(row.shown_at), row.event_id, row.shift_id, row.order_id, row.event_type, row.recommended_product_id, row.shown_at, row.clicked_at, row.added_to_cart, row.dismissed]);
+    });
+    downloadCsv(rows, `patuxai-pops-upsell-${rangeFileLabel()}.csv`);
+  }
+
+  function exportOperationsCsv() {
+    const rows = [["business_date", "operation_status", "planned_open_time", "planned_close_time", "actual_open_time", "actual_close_time", "weather", "special_event", "staff_count", "stock_issue", "equipment_issue", "closed_reason", "operation_note"]];
+    dailyOperations.filter(row => inActiveDateRange(row.business_date)).forEach(row => rows.push([row.business_date, row.operation_status, row.planned_open_time, row.planned_close_time, row.actual_open_time, row.actual_close_time, row.weather, row.special_event, row.staff_count, row.stock_issue, row.equipment_issue, row.closed_reason, row.operation_note]));
+    downloadCsv(rows, `patuxai-pops-operations-${rangeFileLabel()}.csv`);
+  }
+
+  async function savePromotion(form) {
+    if (!POS.canManage(currentRole)) return POS.showToast("需要 Manager / Owner 权限");
+    const data = new FormData(form);
+    const payload = {
+      promotion_name: String(data.get("promotion_name") || "").trim(),
+      promotion_code: String(data.get("promotion_code") || "").trim().toUpperCase(),
+      promotion_type: String(data.get("promotion_type") || "fixed_discount"),
+      minimum_quantity: Number(data.get("minimum_quantity") || 0),
+      minimum_amount: Number(data.get("minimum_amount") || 0),
+      discount_value: Number(data.get("discount_value") || 0),
+      eligible_product_ids: data.get("eligible_product_id") ? [data.get("eligible_product_id")] : [],
+      gift_product_id: data.get("gift_product_id") || null,
+      start_at: data.get("start_at") ? new Date(data.get("start_at")).toISOString() : null,
+      end_at: data.get("end_at") ? new Date(data.get("end_at")).toISOString() : null,
+      usage_limit: data.get("usage_limit") ? Number(data.get("usage_limit")) : null,
+      is_active: true,
+      created_by: currentSession && currentSession.user.id
+    };
+    const button = form.querySelector("button[type='submit']");
+    POS.setBusy(button, true, "保存中");
+    const result = await client.from("promotions").insert(payload);
+    POS.setBusy(button, false);
+    if (result.error) return POS.showToast(result.error.message || "促销保存失败");
+    form.reset();
+    POS.showToast("促销已新增");
+    await refresh(currentSession);
+  }
+
+  async function togglePromotion(id) {
+    const promotion = promotions.find(row => row.promotion_id === id);
+    if (!promotion || !POS.canManage(currentRole)) return;
+    const result = await client.from("promotions").update({ is_active: !promotion.is_active, updated_at: new Date().toISOString() }).eq("promotion_id", id);
+    if (result.error) return POS.showToast(result.error.message);
+    await refresh(currentSession);
+  }
+
+  function reconciliationDay() {
+    if (activeRange === "date") return selectedDate;
+    if (activeRange === "custom") return rangeEndDate;
+    return todayKey;
+  }
+
+  async function refreshReconciliation(review, dayOverride) {
+    const day = dayOverride || reconciliationDay();
+    const result = review
+      ? await client.rpc("review_daily_reconciliation", { p_business_date: day, p_note: "后台确认" })
+      : await client.rpc("refresh_daily_reconciliation", { p_business_date: day });
+    if (result.error) return POS.showToast(result.error.message || "对账刷新失败");
+    POS.showToast(review ? "对账已审核" : "对账已刷新");
+    await refresh(currentSession);
+  }
+
+  async function updateUserRole(userId, role) {
+    if (currentRole !== "owner") return;
+    const result = await client.from("user_profiles").update({ role, updated_at: new Date().toISOString() }).eq("user_id", userId);
+    if (result.error) return POS.showToast(result.error.message || "权限更新失败");
+    POS.showToast("账号权限已更新");
+    await refresh(currentSession);
   }
 
   async function testConnection() {
@@ -1889,6 +2504,7 @@
     activeRange = "date";
     document.querySelectorAll("[data-range]").forEach(item => item.classList.remove("active"));
     syncDateInputs();
+    persistFilters();
     render();
   }
 
@@ -1900,6 +2516,7 @@
       item.classList.toggle("active", item.dataset.range === "month" && value === todayKey.slice(0, 7));
     });
     syncDateInputs();
+    persistFilters();
     render();
   }
 
@@ -1910,6 +2527,7 @@
     activeRange = "custom";
     document.querySelectorAll("[data-range]").forEach(item => item.classList.remove("active"));
     syncDateInputs();
+    persistFilters();
     render();
   }
 
@@ -1921,6 +2539,7 @@
     if (activeRange === "today") selectedDate = todayKey;
     if (activeRange === "month") selectedMonth = todayKey.slice(0, 7);
     syncDateInputs();
+    persistFilters();
     render();
   });
 
@@ -1978,6 +2597,7 @@
       el.productFilters.querySelectorAll("[data-product-filter]").forEach(item => {
         item.classList.toggle("active", item === button);
       });
+      persistFilters();
       render();
     });
   }
@@ -1991,6 +2611,8 @@
       renderOperationsHourChart(filteredOrders(false));
     });
   }
+  [el.orderProductFilter, el.orderCashierFilter, el.shiftCashierFilter].filter(Boolean).forEach(input => input.addEventListener("input", render));
+  [el.orderPaymentFilter, el.shiftStatusFilter].filter(Boolean).forEach(input => input.addEventListener("change", render));
 
   window.addEventListener("hashchange", () => setAdminView(currentAdminView()));
 
@@ -2028,7 +2650,37 @@
     const voidButton = event.target.closest("[data-void]");
     if (voidButton) {
       voidOrder(voidButton.dataset.void);
+      return;
     }
+    const refundButton = event.target.closest("[data-refund]");
+    if (refundButton) {
+      refundOrder(refundButton.dataset.refund);
+      return;
+    }
+    const reverseMovementButton = event.target.closest("[data-reverse-movement]");
+    if (reverseMovementButton) {
+      reverseInventoryMovement(reverseMovementButton.dataset.reverseMovement);
+      return;
+    }
+    const approveWasteButton = event.target.closest("[data-approve-waste]");
+    if (approveWasteButton) {
+      approveWaste(approveWasteButton.dataset.approveWaste);
+      return;
+    }
+    const promotionButton = event.target.closest("[data-toggle-promotion]");
+    if (promotionButton) {
+      togglePromotion(promotionButton.dataset.togglePromotion);
+      return;
+    }
+    const reviewButton = event.target.closest("[data-review-reconciliation]");
+    if (reviewButton) {
+      refreshReconciliation(true, reviewButton.dataset.reviewReconciliation);
+    }
+  });
+
+  document.body.addEventListener("change", event => {
+    const roleSelect = event.target.closest("[data-role-user]");
+    if (roleSelect) updateUserRole(roleSelect.dataset.roleUser, roleSelect.value);
   });
 
   el.stockSummary.addEventListener("input", event => {
@@ -2052,6 +2704,14 @@
   if (el.exportOrdersCsv) el.exportOrdersCsv.addEventListener("click", exportOrdersCsv);
   if (el.exportItemsCsv) el.exportItemsCsv.addEventListener("click", exportItemsCsv);
   if (el.exportInventoryCsv) el.exportInventoryCsv.addEventListener("click", exportInventoryCsv);
+  if (el.exportXlsx) el.exportXlsx.addEventListener("click", exportWorkbook);
+  if (el.exportShiftsCsv) el.exportShiftsCsv.addEventListener("click", exportShiftsCsv);
+  if (el.exportPaymentsCsv) el.exportPaymentsCsv.addEventListener("click", exportPaymentsCsv);
+  if (el.exportPromotionsCsv) el.exportPromotionsCsv.addEventListener("click", exportPromotionsCsv);
+  if (el.exportPromotionUsageCsv) el.exportPromotionUsageCsv.addEventListener("click", exportPromotionUsageCsv);
+  if (el.exportUpsellCsv) el.exportUpsellCsv.addEventListener("click", exportUpsellCsv);
+  if (el.exportOperationsCsv) el.exportOperationsCsv.addEventListener("click", exportOperationsCsv);
+  if (el.refreshReconciliation) el.refreshReconciliation.addEventListener("click", () => refreshReconciliation(false));
   if (el.testConnection) el.testConnection.addEventListener("click", testConnection);
   if (el.backTop) {
     el.backTop.addEventListener("click", () => {
@@ -2074,6 +2734,12 @@
       saveBusinessDay(event.target);
     });
   }
+  if (el.promotionForm) {
+    el.promotionForm.addEventListener("submit", event => {
+      event.preventDefault();
+      savePromotion(event.target);
+    });
+  }
   el.menuEditor.addEventListener("submit", event => {
     event.preventDefault();
     saveProduct(event.target);
@@ -2084,6 +2750,9 @@
     uploadProductImage(input);
   });
 
+  document.querySelectorAll("[data-range]").forEach(item => item.classList.toggle("active", item.dataset.range === activeRange));
+  if (el.productFilters) el.productFilters.querySelectorAll("[data-product-filter]").forEach(item => item.classList.toggle("active", item.dataset.productFilter === activeProductFilter));
+  syncDateInputs();
   setAdminView(currentAdminView());
   POS.initAuth(client, refresh).catch(error => POS.showToast(error.message));
 })();

@@ -11,7 +11,7 @@
   <title>Patuxai Pops 后台统计</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260713-operations-dashboard">
+  <link rel="stylesheet" href="styles.css?v=20260713-p1-business-flow-r2">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -46,6 +46,7 @@
         <button class="button primary" id="exportOrdersCsv">导出订单 CSV</button>
         <button class="button" id="exportItemsCsv">导出明细 CSV</button>
         <button class="button" id="exportInventoryCsv">导出库存 CSV</button>
+        <button class="button primary" id="exportXlsx">导出 Excel</button>
         <button class="button" id="logoutBtn">退出</button>
       </div>
     </section>
@@ -122,6 +123,22 @@
         <strong>营业记录</strong>
         <span>时间、天气、活动</span>
       </a>
+      <a href="#shiftsPanel" data-admin-nav="shifts">
+        <strong>班次管理</strong>
+        <span>开班、交班、差额</span>
+      </a>
+      <a href="#promotionsPanel" data-admin-nav="promotions">
+        <strong>促销管理</strong>
+        <span>折扣、套餐、赠品</span>
+      </a>
+      <a href="#reconciliationPanel" data-admin-nav="reconciliation">
+        <strong>每日对账</strong>
+        <span>支付核对与审核</span>
+      </a>
+      <a href="#systemPanel" data-admin-nav="system">
+        <strong>系统检查</strong>
+        <span>权限、异常、导出</span>
+      </a>
     </nav>
 
     <nav class="product-filters admin-filter-panel" id="productFilters" aria-label="产品筛选">
@@ -141,7 +158,7 @@
       <div class="card"><span>冰淇淋数量</span><strong id="iceCreamItemCount">0</strong></div>
       <div class="card"><span>文创商品数量</span><strong id="merchItemCount">0</strong></div>
       <div class="card"><span>冰淇淋＋文创混合订单</span><strong id="mixedOrderRate">0%</strong></div>
-      <div class="card"><span>取消 / 退款</span><strong id="cancelRefundSummary">0 / 0 KIP</strong></div>
+      <div class="card"><span>取消 / 退款</span><strong id="cancelRefundSummary">0 / 0 KIP</strong><small id="discountGiftSummary">折扣 0 KIP · 赠品 0</small></div>
       <div class="card payment-card"><span>支付方式收款</span><strong id="cashSales">现金 0 KIP</strong><small id="paymentDetail">扫码 0 KIP · 其他 0 KIP</small></div>
       <div class="card"><span>低库存 SKU</span><strong id="lowStockSkuCount">0</strong></div>
     </section>
@@ -224,6 +241,8 @@
           <button type="button" data-hour-metric="orders">订单数</button>
           <button type="button" data-hour-metric="qty">商品件数</button>
           <button type="button" data-hour-metric="avg">客单价</button>
+          <button type="button" data-hour-metric="avgItems">每单件数</button>
+          <button type="button" data-hour-metric="addon">文创附加率</button>
         </div>
         <div class="chart-body" id="operationsHourChart"></div>
       </div>
@@ -252,6 +271,10 @@
         <div class="list" id="categorySummary"></div>
       </div>
       <div class="panel wide-panel">
+        <h2>购物篮与连带销售</h2>
+        <div class="basket-analysis" id="basketAnalysis"></div>
+      </div>
+      <div class="panel wide-panel">
         <h2>商品表现与需求</h2>
         <div class="product-performance" id="productPerformance"></div>
       </div>
@@ -274,6 +297,7 @@
 
     <section class="panel anchor-panel admin-view" id="ordersPanel" data-admin-view="orders">
       <h2>订单明细</h2>
+      <div class="table-filters"><input class="field-input" id="orderProductFilter" placeholder="搜索商品"><select class="field-input" id="orderPaymentFilter"><option value="">全部支付</option><option value="cash">Cash</option><option value="qr">QR</option><option value="bank_transfer">转账</option><option value="mixed">混合</option><option value="complimentary">赠送</option><option value="other">其他</option></select><input class="field-input" id="orderCashierFilter" placeholder="搜索收银员"></div>
       <table>
         <thead>
           <tr>
@@ -296,20 +320,68 @@
         <label>日期<input class="field-input" name="day" type="date" required></label>
         <label>计划开门<input class="field-input" name="planned_open_time" type="time"></label>
         <label>计划收摊<input class="field-input" name="planned_close_time" type="time"></label>
-        <label>天气<input class="field-input" name="weather" placeholder="晴 / 雨 / 高温"></label>
+        <label>天气<select class="field-input" name="weather"><option value="sunny">晴</option><option value="cloudy">多云</option><option value="light_rain">小雨</option><option value="heavy_rain">大雨</option><option value="very_hot">高温</option><option value="other">其他</option></select></label>
         <label>活动<input class="field-input" name="activity" placeholder="市集、节日、团购等"></label>
         <label class="business-note">异常与说明<input class="field-input" name="exception_note" placeholder="晚开、提前收摊、设备故障等"></label>
-        <label>状态<select class="field-input" name="status"><option value="open">营业中</option><option value="closed">已结束</option><option value="planned">计划营业</option><option value="cancelled">取消营业</option></select></label>
+        <label>状态<select class="field-input" name="status"><option value="normal">正常营业</option><option value="late_open">晚开</option><option value="early_close">提前收摊</option><option value="partial">部分营业</option><option value="closed">未营业</option><option value="event">活动日</option><option value="test">测试日</option></select></label>
         <button class="button primary" type="submit">保存营业记录</button>
       </form>
       <div class="list" id="businessDayHistory"></div>
+    </section>
+
+    <section class="panel anchor-panel admin-view" id="shiftsPanel" data-admin-view="shifts">
+      <div class="section-head"><div><h2>班次管理</h2><span>系统金额与实际到账按班次核对</span></div></div>
+      <div class="table-filters"><input class="field-input" id="shiftCashierFilter" placeholder="搜索收银员"><select class="field-input" id="shiftStatusFilter"><option value="">全部状态</option><option value="open">未交班</option><option value="closed">已关闭</option><option value="cancelled">已取消</option></select></div>
+      <div class="list" id="shiftsList"></div>
+    </section>
+
+    <section class="panel anchor-panel admin-view" id="promotionsPanel" data-admin-view="promotions">
+      <div class="section-head"><div><h2>促销管理</h2><span>当前先支持固定折扣、套餐价和买赠</span></div></div>
+      <form class="promotion-form" id="promotionForm">
+        <label>名称<input class="field-input" name="promotion_name" required placeholder="例如：两支组合价"></label>
+        <label>代码<input class="field-input" name="promotion_code" required placeholder="例如 POP2"></label>
+        <label>类型<select class="field-input" name="promotion_type"><option value="fixed_discount">固定折扣</option><option value="bundle_price">套餐价</option><option value="buy_x_get_y">买 X 送 Y</option><option value="gift_with_purchase">满额赠品</option></select></label>
+        <label>最低件数<input class="field-input" name="minimum_quantity" type="number" min="0" value="0"></label>
+        <label>最低金额<input class="field-input" name="minimum_amount" type="number" min="0" step="1000" value="0"></label>
+        <label>折扣 / 套餐价<input class="field-input" name="discount_value" type="number" min="0" step="1000" value="0"></label>
+        <label>指定购买商品<select class="field-input" name="eligible_product_id" id="promotionEligibleProduct"><option value="">任意商品</option></select></label>
+        <label>赠品<select class="field-input" name="gift_product_id" id="promotionGiftProduct"><option value="">不送赠品</option></select></label>
+        <label>开始时间<input class="field-input" name="start_at" type="datetime-local"></label>
+        <label>结束时间<input class="field-input" name="end_at" type="datetime-local"></label>
+        <label>使用上限<input class="field-input" name="usage_limit" type="number" min="1" placeholder="留空表示不限"></label>
+        <button class="button primary" type="submit">新增促销</button>
+      </form>
+      <div class="list" id="promotionsList"></div>
+    </section>
+
+    <section class="panel anchor-panel admin-view" id="reconciliationPanel" data-admin-view="reconciliation">
+      <div class="section-head"><div><h2>每日对账</h2><span>仅现金进入现金账；QR、转账分别核对</span></div><button class="button primary" id="refreshReconciliation" type="button">刷新所选日期</button></div>
+      <div class="list" id="reconciliationList"></div>
+    </section>
+
+    <section class="panel anchor-panel admin-view" id="systemPanel" data-admin-view="system">
+      <div class="section-head"><div><h2>系统检查与导出</h2><span id="currentRoleText">正在读取权限</span></div></div>
+      <div class="system-export-actions">
+        <button class="button" id="exportShiftsCsv" type="button">导出班次 CSV</button>
+        <button class="button" id="exportPaymentsCsv" type="button">导出支付 CSV</button>
+        <button class="button" id="exportPromotionsCsv" type="button">导出促销 CSV</button>
+        <button class="button" id="exportPromotionUsageCsv" type="button">导出促销使用 CSV</button>
+        <button class="button" id="exportUpsellCsv" type="button">导出推荐效果 CSV</button>
+        <button class="button" id="exportOperationsCsv" type="button">导出营业记录 CSV</button>
+      </div>
+      <h3>数据质量提醒</h3>
+      <div class="alert-list" id="dataQualityList"></div>
+      <h3>账号权限</h3>
+      <div class="list" id="rolesList"></div>
+      <h3>最近操作</h3>
+      <div class="list" id="auditList"></div>
     </section>
   </main>
 
   <button class="back-top" id="backTop" type="button" aria-label="返回顶部">↑ 顶部</button>
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260713-operations-dashboard"></script>
-  <script src="common.js?v=20260713-operations-dashboard"></script>
-  <script src="admin.js?v=20260713-operations-dashboard"></script>
+  <script src="config.js?v=20260713-p1-business-flow-r2"></script>
+  <script src="common.js?v=20260713-p1-business-flow-r2"></script>
+  <script src="admin.js?v=20260713-p1-business-flow-r2"></script>
 </body>
 </html>

@@ -100,12 +100,23 @@ a {
 .app {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 430px;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 main,
 .page {
   padding: 20px;
+}
+
+.app > main {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .page {
@@ -969,9 +980,12 @@ h1 {
 }
 
 aside {
-  position: sticky;
-  top: 0;
-  height: 100vh;
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
   background: #fff;
   border-left: 1px solid var(--line);
   padding: 18px;
@@ -1049,7 +1063,7 @@ aside {
 
 .checkout {
   border-top: 1px solid var(--line);
-  padding-top: 14px;
+  padding: 14px 0 max(18px, env(safe-area-inset-bottom));
   background: #fff;
 }
 
@@ -2831,6 +2845,14 @@ td {
 @media (max-width: 980px) {
   .app {
     grid-template-columns: 1fr;
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  .app > main {
+    overflow: visible;
   }
 
   main,
@@ -2863,6 +2885,7 @@ td {
     position: static;
     width: auto;
     height: auto;
+    overflow: visible;
     border-left: 0;
     border-top: 1px solid var(--line);
   }

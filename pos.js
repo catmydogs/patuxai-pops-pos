@@ -77,6 +77,7 @@
     productGrid: document.querySelector("#productGrid"),
     searchInput: document.querySelector("#searchInput"),
     cartList: document.querySelector("#cartList"),
+    cartPanel: document.querySelector(".app > aside"),
     upsellHint: document.querySelector("#upsellHint"),
     cartCount: document.querySelector("#cartCount"),
     subtotal: document.querySelector("#subtotal"),
@@ -84,6 +85,7 @@
     discountInput: document.querySelector("#discountInput"),
     grandTotal: document.querySelector("#grandTotal"),
     checkoutBtn: document.querySelector("#checkoutBtn"),
+    checkoutMore: document.querySelector("#checkoutMore"),
     clearCart: document.querySelector("#clearCart"),
     cashInput: document.querySelector("#cashInput"),
     cashPresets: document.querySelector("#cashPresets"),
@@ -1009,6 +1011,7 @@
     }
     el.subtotal.textContent = POS.money(totals.subtotal);
     if (el.discountText) el.discountText.textContent = totals.discount ? `-${POS.money(totals.discount)}` : POS.money(0);
+    document.querySelectorAll(".summary-detail").forEach(row => { row.hidden = totals.discount <= 0; });
     el.grandTotal.textContent = POS.money(totals.total);
     if (el.promotionApplied) {
       el.promotionApplied.hidden = !appliedPromotion;
@@ -1098,7 +1101,7 @@
     el.upsellHint.hidden = false;
     el.upsellHint.innerHTML = `
       <div class="upsell-copy"><span>${message}</span><strong>仅显示有库存商品</strong></div>
-      <div class="upsell-actions">${candidates.map(product => `<button type="button" data-upsell="${product.id}" data-upsell-type="${eventType}">${productLabel(product)} · ${POS.money(product.selling_price)}</button>`).join("")}<button class="upsell-dismiss" type="button" data-upsell-dismiss="${eventType}" aria-label="关闭推荐">×</button></div>`;
+      <div class="upsell-actions">${candidates.map(product => `<button type="button" data-upsell="${product.id}" data-upsell-type="${eventType}">${productLabel(product)} · ${POS.money(product.selling_price)}</button>`).join("")}<button class="upsell-dismiss" type="button" data-upsell-dismiss="${eventType}">不需要</button></div>`;
     candidates.forEach(product => recordUpsell(eventType, product, "shown").catch(() => {}));
   }
 
@@ -1173,6 +1176,9 @@
     appliedPromotion = null;
     activeUpsellEvents = new Map();
     upsellDismissed = false;
+    payMethod = "cash";
+    document.querySelectorAll(".pay").forEach(item => item.classList.toggle("active", item.dataset.pay === "cash"));
+    if (el.checkoutMore) el.checkoutMore.open = false;
     saveCart();
     el.cashInput.value = "";
     if (el.discountInput) el.discountInput.value = "";
@@ -1356,7 +1362,11 @@
     const button = event.target.closest("[data-id]");
     if (!button) return;
     const product = addToCart(button.dataset.id);
-    if (product) flashAddButton(button, product.name);
+    if (product) {
+      flashAddButton(button, product.name);
+      if (el.cartPanel) el.cartPanel.scrollTo({ top: 0, behavior: "smooth" });
+      if (el.cartList) el.cartList.scrollTop = el.cartList.scrollHeight;
+    }
   });
 
   el.cartList.addEventListener("click", event => {
@@ -1370,6 +1380,7 @@
     if (!button) return;
     payMethod = button.dataset.pay;
     document.querySelectorAll(".pay").forEach(item => item.classList.toggle("active", item === button));
+    if (el.checkoutMore && ["cash", "qr", "bank_transfer"].includes(payMethod)) el.checkoutMore.open = false;
     renderPaymentControls();
     renderCart();
   });

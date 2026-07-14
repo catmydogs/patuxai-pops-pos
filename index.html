@@ -11,7 +11,7 @@
   <title>Patuxai Pops POS</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260714-pos-scroll-fix-r3">
+  <link rel="stylesheet" href="styles.css?v=20260714-simplified-checkout-r4">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -106,26 +106,34 @@
       <div class="upsell-hint" id="upsellHint" hidden></div>
       <div class="checkout">
         <div class="summary">
-          <div><span>小计</span><strong id="subtotal">0 KIP</strong></div>
-          <div><span>折扣</span><strong id="discountText">0 KIP</strong></div>
+          <div class="summary-detail"><span>小计</span><strong id="subtotal">0 KIP</strong></div>
+          <div class="summary-detail"><span>折扣</span><strong id="discountText">0 KIP</strong></div>
           <div class="total"><span>应收</span><strong id="grandTotal">0 KIP</strong></div>
         </div>
-        <label class="discount-row" for="discountInput">
-          <span>手动折扣</span>
-          <input class="field-input" id="discountInput" inputmode="decimal" type="number" min="0" step="1000" placeholder="例如 10000">
-        </label>
-        <label class="discount-row" id="discountReasonRow" for="discountReasonInput" hidden>
-          <span>折扣原因</span>
-          <input class="field-input" id="discountReasonInput" placeholder="Manager / Owner 必填">
-        </label>
         <div class="promotion-applied" id="promotionApplied" hidden></div>
         <div class="pay-methods" id="payMethods">
           <button class="pay active" data-pay="cash">Cash</button>
           <button class="pay" data-pay="qr">QR</button>
           <button class="pay" data-pay="bank_transfer">转账</button>
-          <button class="pay" data-pay="mixed">混合</button>
-          <button class="pay" data-pay="complimentary">赠送</button>
-          <button class="pay" data-pay="other">其他</button>
+          <details class="checkout-more" id="checkoutMore">
+            <summary>更多选项</summary>
+            <div class="more-pay-methods">
+              <button class="pay" data-pay="mixed">混合支付</button>
+              <button class="pay" data-pay="complimentary">赠送</button>
+              <button class="pay" data-pay="other">其他支付</button>
+            </div>
+            <div class="advanced-order-fields">
+              <label class="discount-row" for="discountInput">
+                <span>手动折扣</span>
+                <input class="field-input" id="discountInput" inputmode="decimal" type="number" min="0" step="1000" placeholder="例如 10000">
+              </label>
+              <label class="discount-row" id="discountReasonRow" for="discountReasonInput" hidden>
+                <span>折扣原因</span>
+                <input class="field-input" id="discountReasonInput" placeholder="Manager / Owner 必填">
+              </label>
+              <label class="advanced-note">订单备注<input class="field-input" id="orderNoteInput" placeholder="可选"></label>
+            </div>
+          </details>
         </div>
         <div class="payment-confirm" id="paymentConfirm">
           <div class="qr-payment-display" id="qrPaymentDisplay" hidden><img id="qrPaymentImage" alt="QR 收款码"><strong id="qrPaymentAmount">应收 0 KIP</strong><span>确认到账后再完成收款</span></div>
@@ -138,7 +146,6 @@
             <div class="mixed-total" id="mixedTotalText">合计 0 KIP</div>
           </div>
           <label id="complimentaryReasonRow" hidden>赠送原因<input class="field-input" id="complimentaryReasonInput" placeholder="顾客补偿 / 活动赠送等"></label>
-          <label>订单备注<input class="field-input" id="orderNoteInput" placeholder="可选"></label>
         </div>
         <div class="cash-presets" id="cashPresets">
           <button class="cash-preset" data-cash="exact">刚好</button>
@@ -177,8 +184,8 @@
   </section>
 
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260714-pos-scroll-fix-r3"></script>
-  <script src="common.js?v=20260714-pos-scroll-fix-r3"></script>
-  <script src="pos.js?v=20260714-pos-scroll-fix-r3"></script>
+  <script src="config.js?v=20260714-simplified-checkout-r4"></script>
+  <script src="common.js?v=20260714-simplified-checkout-r4"></script>
+  <script src="pos.js?v=20260714-simplified-checkout-r4"></script>
 </body>
 </html>

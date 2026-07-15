@@ -555,6 +555,8 @@
   function makeLocalOrder(totals) {
     const clientOrderId = makeId();
     const complimentaryReason = payMethod === "complimentary" ? String(el.complimentaryReasonInput && el.complimentaryReasonInput.value || "").trim() : "";
+    const orderNote = String(el.orderNoteInput && el.orderNoteInput.value || "").trim();
+    const discountNote = String(el.discountReasonInput && el.discountReasonInput.value || "").trim();
     return {
       id: `local-${clientOrderId}`,
       client_order_id: clientOrderId,
@@ -574,7 +576,7 @@
       promotion_note: appliedPromotion ? appliedPromotion.promotion_name : totals.discount > 0 ? `手动折扣 ${totals.discount}` : "",
       complimentary_reason: complimentaryReason,
       upsell_event_ids: [...activeUpsellEvents.values()].map(event => event.eventId).filter(Boolean),
-      note: [String(el.orderNoteInput && el.orderNoteInput.value || "").trim(), String(el.discountReasonInput && el.discountReasonInput.value || "").trim()].filter(Boolean).join(" · "),
+      note: [orderNote, discountNote || (totals.manualDiscount > 0 ? "手动折扣" : "")].filter(Boolean).join(" · "),
       payments: buildPayments(totals.total),
       order_items: cart.map(item => ({
         product_id: item.product_id,
@@ -1209,10 +1211,6 @@
     }
     const totals = cartTotals();
     if (cart.length === 0) return;
-    if (totals.manualDiscount > 0 && String(el.discountReasonInput && el.discountReasonInput.value || "").trim().length < 2) {
-      POS.showToast("请填写手动折扣原因");
-      return;
-    }
     if (payMethod === "cash" && Number(el.cashInput.value || 0) < totals.total) {
       POS.showToast("现金实收不足");
       return;

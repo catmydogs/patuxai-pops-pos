@@ -11,7 +11,7 @@
   <title>Patuxai Pops POS</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260715-shift-date-fix-r5">
+  <link rel="stylesheet" href="styles.css?v=20260715-optional-discount-note-r6">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -128,8 +128,8 @@
                 <input class="field-input" id="discountInput" inputmode="decimal" type="number" min="0" step="1000" placeholder="例如 10000">
               </label>
               <label class="discount-row" id="discountReasonRow" for="discountReasonInput" hidden>
-                <span>折扣原因</span>
-                <input class="field-input" id="discountReasonInput" placeholder="Manager / Owner 必填">
+                <span>折扣备注</span>
+                <input class="field-input" id="discountReasonInput" placeholder="选填">
               </label>
               <label class="advanced-note">订单备注<input class="field-input" id="orderNoteInput" placeholder="可选"></label>
             </div>
@@ -184,8 +184,8 @@
   </section>
 
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260715-shift-date-fix-r5"></script>
-  <script src="common.js?v=20260715-shift-date-fix-r5"></script>
-  <script src="pos.js?v=20260715-shift-date-fix-r5"></script>
+  <script src="config.js?v=20260715-optional-discount-note-r6"></script>
+  <script src="common.js?v=20260715-optional-discount-note-r6"></script>
+  <script src="pos.js?v=20260715-optional-discount-note-r6"></script>
 </body>
 </html>

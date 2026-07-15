@@ -530,9 +530,8 @@
       }));
     }
     if (payMethod === "complimentary") {
-      const reason = String(el.complimentaryReasonInput && el.complimentaryReasonInput.value || "").trim();
+      const reason = String(el.complimentaryReasonInput && el.complimentaryReasonInput.value || "").trim() || "赠送";
       if (!POS.canManage(currentRole)) throw new Error("Complimentary 需要 Manager 或 Owner 权限");
-      if (reason.length < 2) throw new Error("请填写赠送原因");
       return [{ payment_method: "complimentary", amount: 0, payment_status: "confirmed", reference_number: "", note: reason }];
     }
     return [{ payment_method: "other", amount: total, payment_status: "confirmed", reference_number: reference }];
@@ -554,7 +553,9 @@
 
   function makeLocalOrder(totals) {
     const clientOrderId = makeId();
-    const complimentaryReason = payMethod === "complimentary" ? String(el.complimentaryReasonInput && el.complimentaryReasonInput.value || "").trim() : "";
+    const complimentaryReason = payMethod === "complimentary"
+      ? (String(el.complimentaryReasonInput && el.complimentaryReasonInput.value || "").trim() || "赠送")
+      : "";
     const orderNote = String(el.orderNoteInput && el.orderNoteInput.value || "").trim();
     const discountNote = String(el.discountReasonInput && el.discountReasonInput.value || "").trim();
     return {

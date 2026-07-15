@@ -252,7 +252,8 @@
   }
 
   function pendingForToday() {
-    return pendingOrders.filter(order => order.day === todayKey);
+    const activeDay = currentShift && currentShift.business_date ? currentShift.business_date : POS.todayKey();
+    return pendingOrders.filter(order => order.day === activeDay);
   }
 
   function updateSyncStatus() {
@@ -295,7 +296,7 @@
     try {
       const [profileResult, shiftResult, promotionResult] = await Promise.all([
         client.from("user_profiles").select("user_id, email, display_name, role, is_active").eq("user_id", currentSession.user.id),
-        client.from("shifts").select("*").eq("cashier_id", currentSession.user.id).eq("status", "open").order("opened_at", { ascending: false }),
+        client.from("shifts").select("*").eq("cashier_id", currentSession.user.id).eq("business_date", POS.todayKey()).eq("status", "open").order("opened_at", { ascending: false }),
         client.from("promotions").select("*").eq("is_active", true).order("created_at", { ascending: false })
       ]);
       if (profileResult.error || shiftResult.error || promotionResult.error) throw new Error("P1 unavailable");
@@ -310,7 +311,7 @@
       writeJson(currentShiftKey, currentShift);
     } catch (error) {
       const cachedShift = readJson(currentShiftKey, null);
-      currentShift = cachedShift && cachedShift.status === "open" ? cachedShift : null;
+      currentShift = cachedShift && cachedShift.status === "open" && cachedShift.business_date === POS.todayKey() ? cachedShift : null;
       currentRole = window.localStorage.getItem(currentRoleKey) || "cashier";
       promotions = readJson(promotionsCacheKey, []).filter(promotionIsActive);
       p1Enabled = window.localStorage.getItem(p1EnabledKey) === "true";
@@ -323,7 +324,7 @@
     const requiresShift = p1Enabled && !currentShift;
     el.shiftScreen.hidden = !requiresShift;
     document.body.classList.toggle("shift-required", requiresShift);
-    if (el.shiftBusinessDate) el.shiftBusinessDate.textContent = `${todayKey} · ${POS.todayLabel()}`;
+    if (el.shiftBusinessDate) el.shiftBusinessDate.textContent = `${POS.todayKey()} · ${POS.todayLabel()}`;
     if (el.shiftCashierName) el.shiftCashierName.value = currentSession && currentSession.user ? (currentSession.user.email || "") : "";
     if (el.shiftStatus) {
       el.shiftStatus.textContent = currentShift
@@ -454,17 +455,18 @@
   }
 
   async function loadTodayOrders() {
+    const activeDay = currentShift && currentShift.business_date ? currentShift.business_date : POS.todayKey();
     try {
       let result = await client
         .from("orders")
         .select("id, shift_id, day, time_text, payment_method, total, total_amount, discount_amount, final_amount, status, cashier, note, promotion_name_snapshot, complimentary_reason, order_items(product_id, name, product_name, category, subcategory, qty, quantity, price, unit_price, subtotal, item_type, gift_reason), payments(payment_method, amount, payment_status)")
-        .eq("day", todayKey)
+        .eq("day", activeDay)
         .order("created_at", { ascending: false });
       if (result.error && /column|schema cache|relationship|select/i.test(result.error.message || "")) {
         result = await client
           .from("orders")
           .select("id, day, time_text, payment_method, total, status, order_items(product_id, name, qty, price)")
-          .eq("day", todayKey)
+          .eq("day", activeDay)
           .order("created_at", { ascending: false });
       }
       if (result.error) throw result.error;
@@ -557,7 +559,7 @@
       id: `local-${clientOrderId}`,
       client_order_id: clientOrderId,
       shift_id: currentShift && currentShift.shift_id,
-      day: todayKey,
+      day: currentShift && currentShift.business_date ? currentShift.business_date : POS.todayKey(),
       time_text: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
       payment_method: payMethod,
       total: totals.total,
@@ -1194,6 +1196,13 @@
 
   async function checkout() {
     if (checkoutInFlight) return;
+    if (currentShift && currentShift.business_date !== POS.todayKey()) {
+      currentShift = null;
+      writeJson(currentShiftKey, null);
+      renderShiftState();
+      POS.showToast("营业日期已更新，请重新开班后下单");
+      return;
+    }
     if (p1Enabled && !currentShift) {
       POS.showToast("请先开班再收银");
       return;

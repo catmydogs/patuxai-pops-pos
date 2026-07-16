@@ -1,5 +1,5 @@
 (function () {
-  const appVersion = "20260715-streamlined-gift-r7";
+  const appVersion = "20260716-pos-category-counts-r8";
   const productCatalog = [
     { id: "patuxai-mango-passion", name: "Patuxai - Mango & Passion Fruit", category: "Patuxai Pops", shape: "Patuxai", flavor: "Mango & Passion Fruit", shape_order: 1, flavor_order: 1, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/shapes/shape-patuxai.png", note: "芒果百香果", sort_order: 1 },
     { id: "patuxai-strawberry-milk", name: "Patuxai - Strawberry Milk", category: "Patuxai Pops", shape: "Patuxai", flavor: "Strawberry Milk", shape_order: 1, flavor_order: 2, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/shapes/shape-patuxai.png", note: "草莓牛奶", sort_order: 2 },
@@ -344,7 +344,7 @@
     return `${Number(value || 0).toLocaleString("en-US")} KIP`;
   }
 
-  const standardCategories = ["icecream", "merchandise", "beverage", "service", "deposit", "other"];
+  const standardCategories = ["icecream", "merchandise", "beverage", "service", "deposit", "bundle", "other"];
 
   function normalizeCategory(value) {
     const text = String(value || "").trim().toLowerCase();
@@ -353,7 +353,7 @@
     if (["merch", "souvenir", "merchandise", "周边产品", "文创纪念品"].includes(text)) return "merchandise";
     if (["drink", "beverage", "饮品"].includes(text)) return "beverage";
     if (["deposit", "订金"].includes(text)) return "deposit";
-    if (["bundle", "combo", "套餐"].includes(text)) return "other";
+    if (["bundle", "combo", "套餐"].includes(text)) return "bundle";
     return "other";
   }
 
@@ -364,6 +364,7 @@
       beverage: "饮料",
       service: "定制服务",
       deposit: "订金",
+      bundle: "套餐",
       other: "其他产品"
     };
     return labels[normalizeCategory(category)] || "其他产品";

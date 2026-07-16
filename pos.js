@@ -94,6 +94,12 @@
     salesTotal: document.querySelector("#salesTotal"),
     orderCount: document.querySelector("#orderCount"),
     itemCount: document.querySelector("#itemCount"),
+    icecreamItemCount: document.querySelector("#icecreamItemCount"),
+    serviceItemCount: document.querySelector("#serviceItemCount"),
+    merchandiseItemCount: document.querySelector("#merchandiseItemCount"),
+    beverageItemCount: document.querySelector("#beverageItemCount"),
+    bundleItemCount: document.querySelector("#bundleItemCount"),
+    otherItemCount: document.querySelector("#otherItemCount"),
     topItem: document.querySelector("#topItem"),
     ordersBody: document.querySelector("#ordersBody"),
     lowStockAlert: document.querySelector("#lowStockAlert"),
@@ -1277,10 +1283,15 @@
       return sum + order.order_items.reduce((part, item) => part + itemQty(item), 0);
     }, 0);
     const itemMap = new Map();
+    const categoryCounts = { icecream: 0, service: 0, merchandise: 0, beverage: 0, bundle: 0, other: 0 };
     activeOrders.forEach(order => {
       order.order_items.forEach(item => {
         const name = item.product_name || item.name;
-        itemMap.set(name, (itemMap.get(name) || 0) + itemQty(item));
+        const quantity = itemQty(item);
+        const category = POS.normalizeCategory(item.product_type || item.category);
+        const reportingCategory = category === "deposit" ? "service" : category;
+        itemMap.set(name, (itemMap.get(name) || 0) + quantity);
+        categoryCounts[reportingCategory in categoryCounts ? reportingCategory : "other"] += quantity;
       });
     });
     const top = [...itemMap.entries()].sort((a, b) => b[1] - a[1])[0];
@@ -1288,6 +1299,12 @@
     el.salesTotal.textContent = POS.money(sales);
     el.orderCount.textContent = activeOrders.length;
     el.itemCount.textContent = count;
+    el.icecreamItemCount.textContent = categoryCounts.icecream;
+    el.serviceItemCount.textContent = categoryCounts.service;
+    el.merchandiseItemCount.textContent = categoryCounts.merchandise;
+    el.beverageItemCount.textContent = categoryCounts.beverage;
+    el.bundleItemCount.textContent = categoryCounts.bundle;
+    el.otherItemCount.textContent = categoryCounts.other;
     el.topItem.textContent = top ? formatOrderItemName({ name: top[0] }) : "暂无";
 
     el.ordersBody.innerHTML = activeOrders.length ? activeOrders.map(order => {

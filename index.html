@@ -11,7 +11,7 @@
   <title>Patuxai Pops POS</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260715-streamlined-gift-r7">
+  <link rel="stylesheet" href="styles.css?v=20260716-pos-category-counts-r8">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -74,8 +74,19 @@
       <section class="reports" aria-label="今日报表">
         <div class="stat"><span>今日销售额</span><strong id="salesTotal">0 KIP</strong></div>
         <div class="stat"><span>订单数</span><strong id="orderCount">0</strong></div>
-        <div class="stat"><span>售出份数</span><strong id="itemCount">0</strong></div>
+        <div class="stat"><span>总售出件数</span><strong id="itemCount">0</strong></div>
         <div class="stat"><span>热销</span><strong id="topItem">暂无</strong></div>
+        <div class="stat category-sales-stat">
+          <span>分类售出件数</span>
+          <div class="pos-category-counts">
+            <div><small>冰淇淋</small><strong id="icecreamItemCount">0</strong></div>
+            <div><small>定制服务</small><strong id="serviceItemCount">0</strong></div>
+            <div><small>文创周边</small><strong id="merchandiseItemCount">0</strong></div>
+            <div><small>饮品</small><strong id="beverageItemCount">0</strong></div>
+            <div><small>套餐</small><strong id="bundleItemCount">0</strong></div>
+            <div><small>其他</small><strong id="otherItemCount">0</strong></div>
+          </div>
+        </div>
       </section>
 
       <section class="panel" aria-label="订单记录">
@@ -182,8 +193,8 @@
   </section>
 
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260715-streamlined-gift-r7"></script>
-  <script src="common.js?v=20260715-streamlined-gift-r7"></script>
-  <script src="pos.js?v=20260715-streamlined-gift-r7"></script>
+  <script src="config.js?v=20260716-pos-category-counts-r8"></script>
+  <script src="common.js?v=20260716-pos-category-counts-r8"></script>
+  <script src="pos.js?v=20260716-pos-category-counts-r8"></script>
 </body>
 </html>

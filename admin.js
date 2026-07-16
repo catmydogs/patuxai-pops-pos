@@ -206,13 +206,56 @@
     return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   }
 
-  function imageFileToDataUrl(file) {
+  function isHeicFile(file) {
+    const type = String(file && file.type || "").toLowerCase();
+    const name = String(file && file.name || "").toLowerCase();
+    return ["image/heic", "image/heif", "image/heic-sequence", "image/heif-sequence"].includes(type)
+      || /\.(heic|heif)$/.test(name);
+  }
+
+  async function prepareImageFile(file) {
+    if (!isHeicFile(file)) return { file, convertedFromHeic: false };
+
+    if (typeof window.heic2any !== "function") {
+      return { file, convertedFromHeic: false };
+    }
+
+    let converted;
+    try {
+      converted = await window.heic2any({
+        blob: file,
+        toType: "image/jpeg",
+        quality: 0.88
+      });
+    } catch (error) {
+      throw new Error("HEIC 转换失败，请检查网络后刷新后台重试");
+    }
+
+    const blob = Array.isArray(converted) ? converted[0] : converted;
+    if (!(blob instanceof Blob)) {
+      throw new Error("HEIC 转换失败，请改为 JPG 后再上传");
+    }
+
+    const fileName = String(file.name || "product-image").replace(/\.(heic|heif)$/i, "") || "product-image";
+    return {
+      file: new File([blob], `${fileName}.jpg`, { type: "image/jpeg", lastModified: Date.now() }),
+      convertedFromHeic: true
+    };
+  }
+
+  async function imageFileToDataUrl(file) {
+    const originalSize = file.size;
+    const prepared = await prepareImageFile(file);
+    const renderableFile = prepared.file;
+
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onerror = () => reject(new Error("图片读取失败"));
       reader.onload = () => {
         const image = new Image();
-        image.onerror = () => reject(new Error("图片格式无法识别"));
+        image.onerror = () => reject(new Error(isHeicFile(file)
+          ? "当前浏览器未能转换 HEIC，请联网刷新后台后重试，或先在相册中导出为 JPG"
+          : "图片格式无法识别"));
         image.onload = () => {
           const maxSide = 900;
           const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
@@ -225,10 +268,11 @@
           context.drawImage(image, 0, 0, canvas.width, canvas.height);
           const finish = dataUrl => resolve({
             dataUrl,
-            originalSize: file.size,
+            originalSize,
             compressedSize: Math.round((dataUrl.length - dataUrl.indexOf(",") - 1) * 0.75),
             width: canvas.width,
-            height: canvas.height
+            height: canvas.height,
+            convertedFromHeic: prepared.convertedFromHeic
           });
 
           if (canvas.toBlob) {
@@ -241,10 +285,11 @@
               compressedReader.onerror = () => reject(new Error("图片压缩失败"));
               compressedReader.onload = () => resolve({
                 dataUrl: compressedReader.result,
-                originalSize: file.size,
+                originalSize,
                 compressedSize: blob.size,
                 width: canvas.width,
-                height: canvas.height
+                height: canvas.height,
+                convertedFromHeic: prepared.convertedFromHeic
               });
               compressedReader.readAsDataURL(blob);
             }, "image/jpeg", 0.8);
@@ -255,7 +300,7 @@
         };
         image.src = reader.result;
       };
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(renderableFile);
     });
   }
 
@@ -1092,8 +1137,8 @@
         </label>
         <label class="image-upload">
           上传图片
-          <input type="file" accept="image/png,image/jpeg,image/webp" data-image-upload="${escapeAttr(product.id)}">
-          <span class="upload-hint">选择图片后自动更新</span>
+          <input type="file" accept="image/png,image/jpeg,image/webp,image/heic,image/heif,.heic,.heif" data-image-upload="${escapeAttr(product.id)}">
+          <span class="upload-hint">支持 JPG、PNG、WebP、HEIC；自动转 JPG 并压缩</span>
         </label>
         <label class="soldout-check">
           <input name="sold_out" type="checkbox" ${product.sold_out ? "checked" : ""}>
@@ -1692,14 +1737,14 @@
     const form = input.closest("[data-product-form]");
     const imagePathInput = form && form.querySelector("[name='image_path']");
 
-    if (!file.type.startsWith("image/")) {
+    if (!String(file.type || "").startsWith("image/") && !isHeicFile(file)) {
       POS.showToast("请选择图片文件");
       input.value = "";
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      POS.showToast("图片不能超过 10MB");
+    if (file.size > 20 * 1024 * 1024) {
+      POS.showToast("图片不能超过 20MB");
       input.value = "";
       return;
     }
@@ -1729,7 +1774,8 @@
         return;
       }
 
-      POS.showToast(`图片已压缩并更新：${formatFileSize(compressed.originalSize)} → ${formatFileSize(compressed.compressedSize)}`);
+      const convertedLabel = compressed.convertedFromHeic ? "HEIC 已转为 JPG 并压缩" : "图片已压缩并更新";
+      POS.showToast(`${convertedLabel}：${formatFileSize(compressed.originalSize)} → ${formatFileSize(compressed.compressedSize)}`);
       await refresh();
     } catch (error) {
       POS.showToast(error.message);

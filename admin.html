@@ -7,11 +7,11 @@
   <meta name="apple-mobile-web-app-title" content="Patuxai Pops 后台">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="format-detection" content="telephone=no">
-  <meta name="theme-color" content="#f6f8fb">
+  <meta name="theme-color" content="#f7f4f7">
   <title>Patuxai Pops 后台统计</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260716-heic-upload-r9">
+  <link rel="stylesheet" href="styles.css?v=20260716-brand-refresh-r11">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -35,21 +35,71 @@
 
   <main class="page">
     <section class="topbar">
-      <div>
-        <h1>后台统计</h1>
-        <div class="subtle"><span id="rangeText">Patuxai Pops 销售数据</span> · <span id="signedInAs"></span> · <span class="sync-badge online" id="syncBadge">在线</span></div>
+      <div class="brand admin-brand">
+        <img class="brand-logo" src="assets/brand/patuxai-pops-logo.png" alt="Patuxai Pops by SERA">
+        <div>
+          <span class="brand-eyebrow">OPERATIONS</span>
+          <h1>后台管理</h1>
+          <div class="subtle"><span id="rangeText">Patuxai Pops 销售数据</span> · <span id="signedInAs"></span> · <span class="sync-badge online" id="syncBadge">在线</span></div>
+        </div>
       </div>
       <div class="actions">
         <a class="button" href="index.html">返回点单</a>
-        <a class="button primary" href="#home">功能首页</a>
         <button class="button" id="testConnection" type="button">测试连接</button>
-        <button class="button primary" id="exportOrdersCsv">导出订单 CSV</button>
-        <button class="button" id="exportItemsCsv">导出明细 CSV</button>
-        <button class="button" id="exportInventoryCsv">导出库存 CSV</button>
-        <button class="button primary" id="exportXlsx">导出 Excel</button>
         <button class="button" id="logoutBtn">退出</button>
       </div>
     </section>
+
+    <nav class="admin-shortcuts" id="adminShortcuts" aria-label="后台功能">
+      <a href="#home" data-admin-nav="home">
+        <strong>首页</strong>
+        <span>经营概览</span>
+      </a>
+      <a href="#analytics" data-admin-nav="analytics">
+        <strong>销售分析</strong>
+        <span>趋势与排行</span>
+      </a>
+      <a href="#menuManagement" data-admin-nav="menu">
+        <strong>菜单</strong>
+        <span>商品与图片</span>
+      </a>
+      <a href="#stockManagement" data-admin-nav="stock">
+        <strong>库存</strong>
+        <span>补货与售罄</span>
+      </a>
+      <a href="#inventoryMovementsPanel" data-admin-nav="inventory">
+        <strong>库存记录</strong>
+        <span>出入库流水</span>
+      </a>
+      <a href="#closeoutPanel" data-admin-nav="closeout">
+        <strong>日结</strong>
+        <span>现金核对</span>
+      </a>
+      <a href="#ordersPanel" data-admin-nav="orders">
+        <strong>订单</strong>
+        <span>明细与取消</span>
+      </a>
+      <a href="#businessDayPanel" data-admin-nav="business">
+        <strong>营业记录</strong>
+        <span>天气与活动</span>
+      </a>
+      <a href="#shiftsPanel" data-admin-nav="shifts">
+        <strong>班次</strong>
+        <span>开班与交班</span>
+      </a>
+      <a href="#promotionsPanel" data-admin-nav="promotions">
+        <strong>促销</strong>
+        <span>折扣与赠品</span>
+      </a>
+      <a href="#reconciliationPanel" data-admin-nav="reconciliation">
+        <strong>对账</strong>
+        <span>支付核对</span>
+      </a>
+      <a href="#systemPanel" data-admin-nav="system">
+        <strong>系统</strong>
+        <span>检查与导出</span>
+      </a>
+    </nav>
 
     <nav class="range" aria-label="统计范围">
       <button class="active" data-range="today">今天</button>
@@ -89,57 +139,6 @@
         <button class="button primary" id="rangeSearchBtn" type="button">查看日期范围</button>
       </div>
     </section>
-
-    <nav class="admin-shortcuts" id="adminShortcuts" aria-label="后台功能仪表盘">
-      <a href="#home" data-admin-nav="home">
-        <strong>首页看板</strong>
-        <span>今日经营概览</span>
-      </a>
-      <a href="#analytics" data-admin-nav="analytics">
-        <strong>销售分析</strong>
-        <span>品类、支付、排行</span>
-      </a>
-      <a href="#menuManagement" data-admin-nav="menu">
-        <strong>菜单管理</strong>
-        <span>新增、下架、改图</span>
-      </a>
-      <a href="#stockManagement" data-admin-nav="stock">
-        <strong>库存管理</strong>
-        <span>补货、售罄、损耗</span>
-      </a>
-      <a href="#inventoryMovementsPanel" data-admin-nav="inventory">
-        <strong>库存记录</strong>
-        <span>查看库存流水</span>
-      </a>
-      <a href="#closeoutPanel" data-admin-nav="closeout">
-        <strong>日结</strong>
-        <span>现金核对</span>
-      </a>
-      <a href="#ordersPanel" data-admin-nav="orders">
-        <strong>订单明细</strong>
-        <span>查询、取消订单</span>
-      </a>
-      <a href="#businessDayPanel" data-admin-nav="business">
-        <strong>营业记录</strong>
-        <span>时间、天气、活动</span>
-      </a>
-      <a href="#shiftsPanel" data-admin-nav="shifts">
-        <strong>班次管理</strong>
-        <span>开班、交班、差额</span>
-      </a>
-      <a href="#promotionsPanel" data-admin-nav="promotions">
-        <strong>促销管理</strong>
-        <span>折扣、套餐、赠品</span>
-      </a>
-      <a href="#reconciliationPanel" data-admin-nav="reconciliation">
-        <strong>每日对账</strong>
-        <span>支付核对与审核</span>
-      </a>
-      <a href="#systemPanel" data-admin-nav="system">
-        <strong>系统检查</strong>
-        <span>权限、异常、导出</span>
-      </a>
-    </nav>
 
     <nav class="product-filters admin-filter-panel" id="productFilters" aria-label="产品筛选">
       <button data-product-filter="all">当前菜单</button>
@@ -362,6 +361,10 @@
     <section class="panel anchor-panel admin-view" id="systemPanel" data-admin-view="system">
       <div class="section-head"><div><h2>系统检查与导出</h2><span id="currentRoleText">正在读取权限</span></div></div>
       <div class="system-export-actions">
+        <button class="button primary" id="exportOrdersCsv" type="button">导出订单 CSV</button>
+        <button class="button" id="exportItemsCsv" type="button">导出明细 CSV</button>
+        <button class="button" id="exportInventoryCsv" type="button">导出库存 CSV</button>
+        <button class="button primary" id="exportXlsx" type="button">导出 Excel</button>
         <button class="button" id="exportShiftsCsv" type="button">导出班次 CSV</button>
         <button class="button" id="exportPaymentsCsv" type="button">导出支付 CSV</button>
         <button class="button" id="exportPromotionsCsv" type="button">导出促销 CSV</button>
@@ -380,9 +383,9 @@
 
   <button class="back-top" id="backTop" type="button" aria-label="返回顶部">↑ 顶部</button>
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260716-heic-upload-r9"></script>
-  <script src="common.js?v=20260716-heic-upload-r9"></script>
+  <script src="config.js?v=20260716-brand-refresh-r11"></script>
+  <script src="common.js?v=20260716-brand-refresh-r11"></script>
   <script src="https://alexcorvi.github.io/heic2any/dist/heic2any.js"></script>
-  <script src="admin.js?v=20260716-heic-upload-r9"></script>
+  <script src="admin.js?v=20260716-brand-refresh-r11"></script>
 </body>
 </html>

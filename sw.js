@@ -1,4 +1,4 @@
-const CACHE_NAME = "patuxai-pops-pos-20260716-heic-upload-r9";
+const CACHE_NAME = "patuxai-pops-pos-20260716-brand-refresh-r11";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -9,6 +9,7 @@ const APP_SHELL = [
   "./pos.js",
   "./admin.js",
   "./manifest.webmanifest",
+  "./assets/brand/patuxai-pops-logo.png",
   "./assets/icons/app-icon-180.png",
   "./assets/icons/app-icon-192.png",
   "./assets/icons/app-icon-512.png",

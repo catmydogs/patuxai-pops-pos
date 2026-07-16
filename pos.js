@@ -76,6 +76,7 @@
     categoryTabs: document.querySelector("#categoryTabs"),
     productGrid: document.querySelector("#productGrid"),
     searchInput: document.querySelector("#searchInput"),
+    posTopbar: document.querySelector(".app > main > .topbar"),
     cartList: document.querySelector("#cartList"),
     cartPanel: document.querySelector(".app > aside"),
     upsellHint: document.querySelector("#upsellHint"),
@@ -1351,6 +1352,18 @@
   }
 
   el.todayText.textContent = POS.todayLabel ? POS.todayLabel() : new Date().toLocaleDateString("zh-CN");
+
+  function updatePosTopbarOffset() {
+    if (!el.posTopbar) return;
+    const height = Math.ceil(el.posTopbar.getBoundingClientRect().height);
+    document.documentElement.style.setProperty("--pos-topbar-height", `${height}px`);
+  }
+
+  updatePosTopbarOffset();
+  window.addEventListener("resize", updatePosTopbarOffset, { passive: true });
+  if (el.posTopbar && window.ResizeObserver) {
+    new ResizeObserver(updatePosTopbarOffset).observe(el.posTopbar);
+  }
 
   el.categoryTabs.addEventListener("click", event => {
     const button = event.target.closest("[data-category]");

@@ -115,6 +115,7 @@
     testConnection: document.querySelector("#testConnection"),
     productFilters: document.querySelector("#productFilters"),
     adminShortcuts: document.querySelector("#adminShortcuts"),
+    adminTopbar: document.querySelector(".page > .topbar"),
     backTop: document.querySelector("#backTop"),
     businessDayForm: document.querySelector("#businessDayForm"),
     businessDayHistory: document.querySelector("#businessDayHistory"),
@@ -170,7 +171,30 @@
     return adminViewByHash[key] || key || "home";
   }
 
-  function setAdminView(view) {
+  function updateAdminStickyOffset() {
+    if (!el.adminTopbar) return;
+    const height = Math.ceil(el.adminTopbar.getBoundingClientRect().height);
+    document.documentElement.style.setProperty("--admin-topbar-height", `${height}px`);
+  }
+
+  function scrollAdminViewIntoPlace(activeView, behavior = "smooth") {
+    const section = document.querySelector(`[data-admin-view="${activeView}"]`);
+    if (!section) return;
+    const topbarHeight = el.adminTopbar ? el.adminTopbar.getBoundingClientRect().height : 0;
+    const navHeight = el.adminShortcuts ? el.adminShortcuts.getBoundingClientRect().height : 0;
+    const top = section.getBoundingClientRect().top + window.scrollY - topbarHeight - navHeight - 14;
+    window.scrollTo({ top: Math.max(0, top), behavior });
+  }
+
+  function keepActiveAdminNavVisible(activeView) {
+    if (!el.adminShortcuts) return;
+    const activeLink = el.adminShortcuts.querySelector(`[data-admin-nav="${activeView}"]`);
+    if (!activeLink) return;
+    const left = activeLink.offsetLeft - (el.adminShortcuts.clientWidth - activeLink.offsetWidth) / 2;
+    el.adminShortcuts.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
+  }
+
+  function setAdminView(view, options = {}) {
     const activeView = adminViewByHash[view] || view || "home";
     document.querySelectorAll("[data-admin-view]").forEach(section => {
       section.hidden = section.dataset.adminView !== activeView;
@@ -182,9 +206,10 @@
       el.adminShortcuts.querySelectorAll("[data-admin-nav]").forEach(link => {
         link.classList.toggle("active", link.dataset.adminNav === activeView);
       });
+      keepActiveAdminNavVisible(activeView);
     }
-    if (el.backTop) {
-      window.scrollTo({ top: 0, behavior: "smooth" });
+    if (options.scroll) {
+      window.requestAnimationFrame(() => scrollAdminViewIntoPlace(activeView, options.behavior || "smooth"));
     }
   }
 
@@ -2660,7 +2685,26 @@
   [el.orderProductFilter, el.orderCashierFilter, el.shiftCashierFilter].filter(Boolean).forEach(input => input.addEventListener("input", render));
   [el.orderPaymentFilter, el.shiftStatusFilter].filter(Boolean).forEach(input => input.addEventListener("change", render));
 
-  window.addEventListener("hashchange", () => setAdminView(currentAdminView()));
+  if (el.adminShortcuts) {
+    el.adminShortcuts.addEventListener("click", event => {
+      const link = event.target.closest("[data-admin-nav]");
+      if (!link) return;
+      event.preventDefault();
+      const nextHash = link.getAttribute("href") || "#home";
+      if (window.location.hash !== nextHash) {
+        window.history.pushState(null, "", nextHash);
+      }
+      setAdminView(link.dataset.adminNav, { scroll: true });
+    });
+  }
+
+  window.addEventListener("hashchange", () => setAdminView(currentAdminView(), { scroll: true }));
+  window.addEventListener("popstate", () => setAdminView(currentAdminView(), { scroll: true }));
+  window.addEventListener("resize", updateAdminStickyOffset, { passive: true });
+  updateAdminStickyOffset();
+  if (el.adminTopbar && window.ResizeObserver) {
+    new ResizeObserver(updateAdminStickyOffset).observe(el.adminTopbar);
+  }
 
   document.body.addEventListener("click", event => {
     const soldOutButton = event.target.closest("[data-soldout]");
@@ -2799,6 +2843,7 @@
   document.querySelectorAll("[data-range]").forEach(item => item.classList.toggle("active", item.dataset.range === activeRange));
   if (el.productFilters) el.productFilters.querySelectorAll("[data-product-filter]").forEach(item => item.classList.toggle("active", item.dataset.productFilter === activeProductFilter));
   syncDateInputs();
+  updateAdminStickyOffset();
   setAdminView(currentAdminView());
   POS.initAuth(client, refresh).catch(error => POS.showToast(error.message));
 })();

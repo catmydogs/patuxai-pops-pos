@@ -1,4 +1,4 @@
-const CACHE_NAME = "patuxai-pops-pos-20260721-menu-sync-r17";
+const CACHE_NAME = "patuxai-pops-pos-20260721-ipad-cache-r18";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -39,15 +39,16 @@ self.addEventListener("fetch", event => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  if (request.mode === "navigate") {
+  const mustRefresh = request.mode === "navigate" || /\.(?:html|css|js)$/.test(url.pathname);
+  if (mustRefresh) {
     event.respondWith(
-      fetch(request)
+      fetch(request, { cache: "no-store" })
         .then(response => {
           const copy = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
           return response;
         })
-        .catch(() => caches.match(request).then(response => response || caches.match("./index.html")))
+        .catch(() => caches.match(request, { ignoreSearch: true }).then(response => response || caches.match("./index.html")))
     );
     return;
   }

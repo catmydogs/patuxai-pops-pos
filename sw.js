@@ -1,4 +1,4 @@
-const CACHE_NAME = "patuxai-pops-pos-20260716-brand-refresh-r11";
+const CACHE_NAME = "patuxai-pops-pos-20260721-remove-planned-products-r15";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -13,14 +13,7 @@ const APP_SHELL = [
   "./assets/icons/app-icon-180.png",
   "./assets/icons/app-icon-192.png",
   "./assets/icons/app-icon-512.png",
-  "./assets/flavors/mango-passion-bg.png",
-  "./assets/flavors/strawberry-milk-bg.png",
-  "./assets/flavors/japanese-melon-bg.png",
-  "./assets/flavors/coconut-butterfly-pea-bg.png",
-  "./assets/shapes/shape-patuxai.png",
-  "./assets/shapes/shape-i-love-laos.png",
-  "./assets/shapes/shape-elephant.png",
-  "./assets/shapes/shape-frangipani.png"
+  "./assets/shapes/shape-patuxai.png"
 ];
 
 self.addEventListener("install", event => {

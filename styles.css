@@ -820,11 +820,25 @@ h1 {
   background: rgba(255, 255, 255, 0.45);
 }
 
-.extra-products {
+.extra-products,
+.product-group {
   grid-column: 1 / -1;
   display: grid;
   gap: 12px;
   margin-top: 18px;
+}
+
+.product-group:first-child {
+  margin-top: 0;
+}
+
+.product-group:first-child .section-head {
+  border-top: 0;
+  padding-top: 2px;
+}
+
+.product-empty {
+  grid-column: 1 / -1;
 }
 
 .section-head {
@@ -873,6 +887,9 @@ h1 {
   align-items: center;
   gap: 10px;
   padding: 10px;
+  border-left: 4px solid var(--product-tone, var(--accent));
+  background:
+    linear-gradient(110deg, var(--product-tone-soft, #fff) 0, rgba(255, 255, 255, 0.98) 34%, #fff 100%);
 }
 
 .product-compact .product-image {
@@ -900,6 +917,7 @@ h1 {
 
 .product-compact h2 {
   overflow: hidden;
+  color: var(--product-tone-ink, var(--ink));
   font-size: 16px;
   line-height: 1.18;
   display: -webkit-box;
@@ -914,6 +932,7 @@ h1 {
 }
 
 .product-compact .price {
+  color: var(--product-tone, var(--rose));
   font-size: 16px;
 }
 

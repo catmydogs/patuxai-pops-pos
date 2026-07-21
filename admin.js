@@ -12,10 +12,7 @@
     "pistachio",
     "coconut-butterfly-pea",
     "japanese-melon",
-    "lychee-rose-soda",
-    "patuxai-sunset-soda",
-    "peach-jasmine-sparkle",
-    "grapefruit-sparkle"
+    ...(POS.retiredProductIds || [])
   ]);
   let activeRange = savedFilters.activeRange || "today";
   let selectedDate = savedFilters.selectedDate || todayKey;
@@ -238,49 +235,19 @@
       || /\.(heic|heif)$/.test(name);
   }
 
-  async function prepareImageFile(file) {
-    if (!isHeicFile(file)) return { file, convertedFromHeic: false };
-
-    if (typeof window.heic2any !== "function") {
-      return { file, convertedFromHeic: false };
-    }
-
-    let converted;
-    try {
-      converted = await window.heic2any({
-        blob: file,
-        toType: "image/jpeg",
-        quality: 0.88
-      });
-    } catch (error) {
-      throw new Error("HEIC 转换失败，请检查网络后刷新后台重试");
-    }
-
-    const blob = Array.isArray(converted) ? converted[0] : converted;
-    if (!(blob instanceof Blob)) {
-      throw new Error("HEIC 转换失败，请改为 JPG 后再上传");
-    }
-
-    const fileName = String(file.name || "product-image").replace(/\.(heic|heif)$/i, "") || "product-image";
-    return {
-      file: new File([blob], `${fileName}.jpg`, { type: "image/jpeg", lastModified: Date.now() }),
-      convertedFromHeic: true
-    };
-  }
-
   async function imageFileToDataUrl(file) {
+    if (isHeicFile(file)) {
+      throw new Error("请先把 HEIC 转换成 JPG，再上传产品图片");
+    }
     const originalSize = file.size;
-    const prepared = await prepareImageFile(file);
-    const renderableFile = prepared.file;
+    const renderableFile = file;
 
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onerror = () => reject(new Error("图片读取失败"));
       reader.onload = () => {
         const image = new Image();
-        image.onerror = () => reject(new Error(isHeicFile(file)
-          ? "当前浏览器未能转换 HEIC，请联网刷新后台后重试，或先在相册中导出为 JPG"
-          : "图片格式无法识别"));
+        image.onerror = () => reject(new Error("图片格式无法识别"));
         image.onload = () => {
           const maxSide = 900;
           const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
@@ -296,8 +263,7 @@
             originalSize,
             compressedSize: Math.round((dataUrl.length - dataUrl.indexOf(",") - 1) * 0.75),
             width: canvas.width,
-            height: canvas.height,
-            convertedFromHeic: prepared.convertedFromHeic
+            height: canvas.height
           });
 
           if (canvas.toBlob) {
@@ -313,8 +279,7 @@
                 originalSize,
                 compressedSize: blob.size,
                 width: canvas.width,
-                height: canvas.height,
-                convertedFromHeic: prepared.convertedFromHeic
+                height: canvas.height
               });
               compressedReader.readAsDataURL(blob);
             }, "image/jpeg", 0.8);
@@ -1077,12 +1042,12 @@
     }
 
     el.menuEditor.innerHTML = visibleProducts.map(product => {
-      const isMatrixProduct = currentProductIds.has(product.id);
+      const isOriginalIcecream = currentProductIds.has(product.id);
       return `
       <form class="menu-row" data-product-form="${escapeAttr(product.id)}">
         <img class="menu-thumb" src="${escapeAttr(product.image_path)}" alt="${escapeAttr(product.name)}">
         <div class="menu-row-title">
-          <strong>${escapeHtml(isMatrixProduct ? "冰淇淋 SKU" : "普通产品")}</strong>
+          <strong>${escapeHtml(product.category === "icecream" ? "冰淇淋产品" : "普通产品")}</strong>
           <small>永久 ID：${escapeHtml(product.has_stable_product_id ? product.product_id : "执行升级 SQL 后生成")}</small>
           <small>旧编号：${escapeHtml(product.id)}</small>
         </div>
@@ -1125,12 +1090,12 @@
           <input class="field-input" name="unit" value="${escapeAttr(product.unit || "件")}" placeholder="件 / 支 / 杯">
         </label>
         <label>
-          形状
-          <input class="field-input" name="shape" value="${escapeAttr(product.shape || "")}" ${isMatrixProduct ? "readonly" : ""}>
+          系列 / 造型（可选）
+          <input class="field-input" name="shape" value="${escapeAttr(product.shape || "")}">
         </label>
         <label>
-          口味
-          <input class="field-input" name="flavor" value="${escapeAttr(product.flavor || "")}" ${isMatrixProduct ? "readonly" : ""}>
+          口味（可选）
+          <input class="field-input" name="flavor" value="${escapeAttr(product.flavor || "")}">
         </label>
         <label>
           售价 KIP
@@ -1150,11 +1115,11 @@
         </label>
         <label>
           形状排序
-          <input class="field-input" name="shape_order" type="number" step="1" value="${product.shape_order || 0}" ${isMatrixProduct ? "readonly" : ""}>
+          <input class="field-input" name="shape_order" type="number" step="1" value="${product.shape_order || 0}">
         </label>
         <label>
           口味排序
-          <input class="field-input" name="flavor_order" type="number" step="1" value="${product.flavor_order || 0}" ${isMatrixProduct ? "readonly" : ""}>
+          <input class="field-input" name="flavor_order" type="number" step="1" value="${product.flavor_order || 0}">
         </label>
         <label>
           图片路径
@@ -1162,8 +1127,8 @@
         </label>
         <label class="image-upload">
           上传图片
-          <input type="file" accept="image/png,image/jpeg,image/webp,image/heic,image/heif,.heic,.heif" data-image-upload="${escapeAttr(product.id)}">
-          <span class="upload-hint">支持 JPG、PNG、WebP、HEIC；自动转 JPG 并压缩</span>
+          <input type="file" accept="image/png,image/jpeg,image/webp,.jpg,.jpeg,.png,.webp" data-image-upload="${escapeAttr(product.id)}">
+          <span class="upload-hint">支持 JPG、PNG、WebP；上传后自动压缩</span>
         </label>
         <label class="soldout-check">
           <input name="sold_out" type="checkbox" ${product.sold_out ? "checked" : ""}>
@@ -1194,7 +1159,7 @@
           <input class="field-input" name="upsell_priority" type="number" step="1" value="${Number(product.upsell_priority || 0)}">
         </label>
         <button class="button primary" type="submit">保存</button>
-        ${isMatrixProduct ? "" : `<button class="button danger" type="button" data-delete-product="${escapeAttr(product.id)}">删除</button>`}
+        ${isOriginalIcecream ? "" : `<button class="button danger" type="button" data-delete-product="${escapeAttr(product.id)}">删除</button>`}
       </form>
     `;
     }).join("");
@@ -1762,7 +1727,13 @@
     const form = input.closest("[data-product-form]");
     const imagePathInput = form && form.querySelector("[name='image_path']");
 
-    if (!String(file.type || "").startsWith("image/") && !isHeicFile(file)) {
+    if (isHeicFile(file)) {
+      POS.showToast("请先把 HEIC 转换成 JPG，再上传产品图片");
+      input.value = "";
+      return;
+    }
+
+    if (!String(file.type || "").startsWith("image/")) {
       POS.showToast("请选择图片文件");
       input.value = "";
       return;
@@ -1799,8 +1770,7 @@
         return;
       }
 
-      const convertedLabel = compressed.convertedFromHeic ? "HEIC 已转为 JPG 并压缩" : "图片已压缩并更新";
-      POS.showToast(`${convertedLabel}：${formatFileSize(compressed.originalSize)} → ${formatFileSize(compressed.compressedSize)}`);
+      POS.showToast(`图片已压缩并更新：${formatFileSize(compressed.originalSize)} → ${formatFileSize(compressed.compressedSize)}`);
       await refresh();
     } catch (error) {
       POS.showToast(error.message);
@@ -1981,7 +1951,7 @@
     const product = products.find(item => item.id === productId);
     if (!product) return;
     if (currentProductIds.has(productId)) {
-      POS.showToast("冰淇淋矩阵产品不能删除，只能下架或售罄");
+      POS.showToast("原始冰淇淋商品需保留历史记录，可关闭“前台显示”进行下架");
       return;
     }
 

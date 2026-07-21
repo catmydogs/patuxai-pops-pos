@@ -286,12 +286,14 @@
       products = (result.data && result.data.length ? result.data : POS.productCatalog)
         .map(POS.normalizeProduct)
         .filter(product => product.is_deleted !== true)
+        .filter(product => !(POS.retiredProductIds || []).includes(product.id))
         .filter(product => product.is_active !== false);
       writeJson(productsCacheKey, products);
     } catch (error) {
       products = readJson(productsCacheKey, POS.productCatalog)
         .map(POS.normalizeProduct)
         .filter(product => product.is_deleted !== true)
+        .filter(product => !(POS.retiredProductIds || []).includes(product.id))
         .filter(product => product.is_active !== false);
       POS.showToast("已使用本地菜单");
     }
@@ -723,42 +725,7 @@
     return syncPendingOrders(silent);
   }
 
-  function skuProducts() {
-    return products.filter(product => product.shape && product.flavor);
-  }
-
-  function extraProducts() {
-    return products.filter(product => !product.shape || !product.flavor);
-  }
-
-  function orderedUnique(items, key, orderKey) {
-    const map = new Map();
-    items.forEach(item => {
-      const value = item[key];
-      if (!value || map.has(value)) return;
-      map.set(value, {
-        name: value,
-        order: Number(item[orderKey] || item.sort_order || 0)
-      });
-    });
-    return [...map.values()].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
-  }
-
-  const skuFlavorAssets = {
-    "Mango & Passion Fruit": "assets/flavors/mango-passion-bg.png",
-    "Strawberry Milk": "assets/flavors/strawberry-milk-bg.png",
-    "Japanese Melon": "assets/flavors/japanese-melon-bg.png",
-    "Coconut + Butterfly Pea": "assets/flavors/coconut-butterfly-pea-bg.png"
-  };
-
-  const skuShapeAssets = {
-    "Patuxai": "assets/shapes/shape-patuxai.png",
-    "I Love Laos": "assets/shapes/shape-i-love-laos.png",
-    "Elephant": "assets/shapes/shape-elephant.png",
-    "Frangipani Flower": "assets/shapes/shape-frangipani.png"
-  };
-
-  const skuFlavorColors = {
+  const productFlavorColors = {
     "Mango & Passion Fruit": { tone: "#e59718", soft: "#fff1c8", ink: "#7a4a00" },
     "Strawberry Milk": { tone: "#dd6f86", soft: "#ffe1e8", ink: "#7c2637" },
     "Japanese Melon": { tone: "#6d9f4a", soft: "#e7f4d7", ink: "#31551f" },
@@ -772,14 +739,10 @@
     return `${path}${separator}v=${POS.appVersion || Date.now()}`;
   }
 
-  function imageStyle(path) {
-    return path ? `style="--sku-bg: url('${assetUrl(path)}')"` : "";
-  }
-
-  function skuCellStyle(flavorName) {
-    const colors = skuFlavorColors[flavorName];
+  function productToneStyle(flavorName) {
+    const colors = productFlavorColors[flavorName];
     if (!colors) return "";
-    return `style="--sku-tone: ${colors.tone}; --sku-tone-soft: ${colors.soft}; --sku-tone-ink: ${colors.ink};"`;
+    return `style="--product-tone: ${colors.tone}; --product-tone-soft: ${colors.soft}; --product-tone-ink: ${colors.ink};"`;
   }
 
   function formatOrderItemName(item) {
@@ -789,11 +752,6 @@
   }
 
   function renderCategories() {
-    if (skuProducts().length) {
-      el.categoryTabs.hidden = true;
-      return;
-    }
-
     el.categoryTabs.hidden = false;
     const categories = ["全部", ...new Set(products.map(product => product.category))];
     el.categoryTabs.innerHTML = categories.map(category => {
@@ -811,11 +769,11 @@
     const compact = mode === "compact";
     if (compact) {
       return `
-        <article class="product product-compact ${low}">
+        <article class="product product-compact ${low}" ${productToneStyle(product.flavor)}>
           ${image || `<div class="product-image product-image-placeholder">${POS.categoryLabel(product.category).slice(0, 2)}</div>`}
           <div class="product-body">
-            <h2>${product.name}</h2>
-            <div class="meta"><span>${product.note || POS.categoryLabel(product.category)}</span><span>${stockText}</span></div>
+            <h2>${productLabel(product)}</h2>
+            <div class="meta"><span>${POS.categoryLabel(product.category)}</span><span>${stockText}</span></div>
             <div class="price">${POS.money(product.selling_price)}</div>
           </div>
           <button class="add compact-add" data-id="${product.id}" ${disabled}>${isUnavailable ? "售罄" : "加入"}</button>
@@ -835,18 +793,13 @@
     `;
   }
 
-  function renderExtraProducts(items) {
-    const query = el.searchInput.value.trim().toLowerCase();
-    const visible = items.filter(product => {
-      return !query || `${product.name}${product.category}${product.note}`.toLowerCase().includes(query);
-    });
-    if (!visible.length) return "";
-
-    const groups = [...new Set(visible.map(product => product.category || "other"))];
+  function renderProductGroups(items) {
+    if (!items.length) return `<div class="empty product-empty">没有符合条件的商品。</div>`;
+    const groups = [...new Set(items.map(product => product.category || "other"))];
     return groups.map(category => {
-      const categoryProducts = visible.filter(product => (product.category || "other") === category);
+      const categoryProducts = items.filter(product => (product.category || "other") === category);
       return `
-        <section class="extra-products" aria-label="${category}">
+        <section class="product-group" aria-label="${category}">
           <div class="section-head">
             <h2>${POS.categoryLabel(category)}</h2>
             <span>${categoryProducts.length} 款</span>
@@ -859,84 +812,15 @@
     }).join("");
   }
 
-  function renderFavorites() {
-    const favorites = products.filter(product => product.is_favorite && !isProductUnavailable(product)).slice(0, 8);
-    if (!favorites.length) return "";
-    return `
-      <section class="extra-products favorites-products" aria-label="常用商品">
-        <div class="section-head"><h2>常用商品</h2><span>快速加入</span></div>
-        <div class="extra-grid">${favorites.map(product => productCard(product, "compact")).join("")}</div>
-      </section>`;
-  }
-
-  function skuMatrixHtml(matrixProducts) {
-    const query = el.searchInput.value.trim().toLowerCase();
-    const shapes = orderedUnique(matrixProducts, "shape", "shape_order");
-    const flavors = orderedUnique(matrixProducts, "flavor", "flavor_order");
-    const matches = product => {
-      if (!query) return true;
-      return `${product.name}${product.shape}${product.flavor}${product.note}`.toLowerCase().includes(query);
-    };
-
-    return `
-      <section class="sku-matrix" aria-label="形状口味矩阵">
-        <div class="sku-matrix-head">
-          <div>
-            <h2>选择形状 + 口味</h2>
-            <span>每格是一个独立库存 SKU</span>
-          </div>
-          <strong>${POS.money(matrixProducts[0] ? matrixProducts[0].selling_price : 55000)} / 个</strong>
-        </div>
-        <div class="sku-table" style="--flavor-count: ${flavors.length}">
-          <div class="sku-corner">
-            <span class="corner-flavor">口味选择</span>
-            <span class="corner-shape">形状选择</span>
-          </div>
-          ${flavors.map(flavor => `
-            <div class="sku-flavor" ${imageStyle(skuFlavorAssets[flavor.name])}>
-              <span>${flavor.name}</span>
-            </div>
-          `).join("")}
-          ${shapes.map(shape => `
-            <div class="sku-shape" ${imageStyle(skuShapeAssets[shape.name])}>
-              <span>${shape.name}</span>
-            </div>
-            ${flavors.map(flavor => {
-              const product = matrixProducts.find(item => item.shape === shape.name && item.flavor === flavor.name);
-              if (!product || !matches(product)) return `<div class="sku-empty"></div>`;
-              const isUnavailable = isProductUnavailable(product);
-              const disabled = isUnavailable ? "disabled" : "";
-              const low = product.track_inventory !== false && (product.stock <= (product.low_stock_threshold || lowStockThreshold) || product.sold_out) ? "low" : "";
-              const stockText = product.track_inventory === false ? "无需库存" : isUnavailable ? "售罄" : `库存 ${product.stock}`;
-              return `
-                <button class="sku-cell ${low}" data-id="${product.id}" ${skuCellStyle(product.flavor)} ${disabled}>
-                  <span>${product.note || product.flavor}</span>
-                  <strong>${stockText}</strong>
-                </button>
-              `;
-            }).join("")}
-          `).join("")}
-        </div>
-      </section>
-    `;
-  }
-
   function renderProducts() {
-    const matrixProducts = skuProducts();
-    const addOns = extraProducts();
-    if (matrixProducts.length) {
-      el.productGrid.innerHTML = `${renderFavorites()}${skuMatrixHtml(matrixProducts)}${renderExtraProducts(addOns)}`;
-      return;
-    }
-
     const query = el.searchInput.value.trim().toLowerCase();
     const visible = products.filter(product => {
       const categoryMatch = activeCategory === "全部" || product.category === activeCategory;
-      const queryMatch = !query || `${product.name}${product.category}${product.note}`.toLowerCase().includes(query);
+      const queryMatch = !query || `${product.name}${product.short_name || ""}${product.category}${product.subcategory || ""}${product.shape || ""}${product.flavor || ""}${product.note || ""}`.toLowerCase().includes(query);
       return categoryMatch && queryMatch;
     });
 
-    el.productGrid.innerHTML = visible.map(productCard).join("");
+    el.productGrid.innerHTML = renderProductGroups(visible);
   }
 
   function flashAddButton(button, productName) {

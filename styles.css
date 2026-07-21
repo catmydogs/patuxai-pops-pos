@@ -3606,3 +3606,63 @@ aside {
     font-size: 9px;
   }
 }
+
+/* Keep the POS usable in iPad portrait: catalog and checkout scroll separately. */
+@media (min-width: 720px) and (max-width: 980px) {
+  .app {
+    grid-template-columns: minmax(0, 58fr) minmax(320px, 42fr);
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .app > main {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app > aside {
+    position: relative;
+    width: auto;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow-y: auto;
+    border-top: 0;
+    border-left: 1px solid var(--line);
+    padding: 16px;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app > main > .topbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .app > main .toolbar {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .app > main .search {
+    width: 100%;
+    flex-basis: 100%;
+  }
+
+  .app .extra-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .app .product-compact {
+    grid-template-columns: 68px minmax(0, 1fr) 68px;
+  }
+
+  .app .cart-list {
+    max-height: 32vh;
+  }
+}

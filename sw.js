@@ -1,4 +1,4 @@
-const CACHE_NAME = "patuxai-pops-pos-20260721-remove-planned-products-r15";
+const CACHE_NAME = "patuxai-pops-pos-20260721-ipad-layout-r16";
 const APP_SHELL = [
   "./",
   "./index.html",

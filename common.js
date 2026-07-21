@@ -1,5 +1,5 @@
 (function () {
-  const appVersion = "20260721-ipad-cache-r18";
+  const appVersion = "20260721-storage-quota-r19";
   const productCatalog = [
     { id: "patuxai-mango-passion", name: "Patuxai - Mango & Passion Fruit", category: "Patuxai Pops", shape: "Patuxai", flavor: "Mango & Passion Fruit", shape_order: 1, flavor_order: 1, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/shapes/shape-patuxai.png", note: "芒果百香果", sort_order: 1 },
     { id: "patuxai-strawberry-milk", name: "Patuxai - Strawberry Milk", category: "Patuxai Pops", shape: "Patuxai", flavor: "Strawberry Milk", shape_order: 1, flavor_order: 2, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/shapes/shape-patuxai.png", note: "草莓牛奶", sort_order: 2 },
@@ -28,6 +28,20 @@
   function createRestClient(config) {
     const sessionKey = "patuxai-pops-session";
     const requestTimeoutMs = 30000;
+
+    function storeSession(value) {
+      try {
+        window.localStorage.setItem(sessionKey, value);
+      } catch (error) {
+        window.localStorage.removeItem("patuxai-pops-products-cache");
+        window.localStorage.removeItem("patuxai-pops-promotions-cache");
+        try {
+          window.localStorage.setItem(sessionKey, value);
+        } catch (retryError) {
+          throw new Error("iPad 本地存储空间不足，请先打开缓存刷新页");
+        }
+      }
+    }
 
     async function fetchWithTimeout(url, options) {
       const supportsAbort = typeof AbortController !== "undefined";
@@ -102,7 +116,7 @@
         expires_at: Math.floor(Date.now() / 1000) + Number(data.expires_in || 3600),
         user: data.user || {}
       };
-      window.localStorage.setItem(sessionKey, JSON.stringify(session));
+      storeSession(JSON.stringify(session));
       return session;
     }
 

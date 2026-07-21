@@ -50,10 +50,13 @@
           const registrations = await navigator.serviceWorker.getRegistrations();
           await Promise.all(registrations.map(registration => registration.unregister()));
         }
+        // Remove only rebuildable menu caches. Login and pending offline orders stay intact.
+        localStorage.removeItem("patuxai-pops-products-cache");
+        localStorage.removeItem("patuxai-pops-promotions-cache");
       } catch (error) {
         // Continue to the app even if the browser blocks one cleanup step.
       }
-      window.location.replace(`./?v=20260721-ipad-cache-r18&refresh=${Date.now()}`);
+      window.location.replace(`./?v=20260721-storage-quota-r19&refresh=${Date.now()}`);
     })();
   </script>
 </body>

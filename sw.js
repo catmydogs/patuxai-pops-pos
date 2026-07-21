@@ -1,4 +1,4 @@
-const CACHE_NAME = "patuxai-pops-pos-20260721-ipad-cache-r18";
+const CACHE_NAME = "patuxai-pops-pos-20260721-storage-quota-r19";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -16,9 +16,21 @@ const APP_SHELL = [
   "./assets/shapes/shape-patuxai.png"
 ];
 
+function cacheResponse(request, response) {
+  if (!response || !response.ok) return;
+  const cacheUrl = new URL(request.url);
+  cacheUrl.search = "";
+  cacheUrl.hash = "";
+  caches.open(CACHE_NAME)
+    .then(cache => cache.put(cacheUrl.toString(), response.clone()))
+    .catch(() => {});
+}
+
 self.addEventListener("install", event => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(key => key.startsWith("patuxai-pops-pos-") && key !== CACHE_NAME).map(key => caches.delete(key))))
+      .then(() => caches.open(CACHE_NAME))
       .then(cache => cache.addAll(APP_SHELL))
       .then(() => self.skipWaiting())
   );
@@ -27,7 +39,7 @@ self.addEventListener("install", event => {
 self.addEventListener("activate", event => {
   event.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))))
+      .then(keys => Promise.all(keys.filter(key => key.startsWith("patuxai-pops-pos-") && key !== CACHE_NAME).map(key => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
@@ -44,8 +56,7 @@ self.addEventListener("fetch", event => {
     event.respondWith(
       fetch(request, { cache: "no-store" })
         .then(response => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
+          cacheResponse(request, response);
           return response;
         })
         .catch(() => caches.match(request, { ignoreSearch: true }).then(response => response || caches.match("./index.html")))
@@ -56,8 +67,7 @@ self.addEventListener("fetch", event => {
   event.respondWith(
     caches.match(request).then(cached => {
       return cached || fetch(request).then(response => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
+        cacheResponse(request, response);
         return response;
       });
     })

@@ -172,7 +172,60 @@
   }
 
   function writeJson(key, value) {
-    window.localStorage.setItem(key, JSON.stringify(value));
+    return safeSetStorage(key, JSON.stringify(value));
+  }
+
+  function safeSetStorage(key, value) {
+    try {
+      window.localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      const quotaExceeded = /quota|storage.*full|exceeded/i.test(String((error && error.message) || error || "")) ||
+        (error && (error.name === "QuotaExceededError" || error.code === 22));
+      if (!quotaExceeded) return false;
+
+      [productsCacheKey, promotionsCacheKey].forEach(cacheKey => {
+        if (cacheKey !== key) window.localStorage.removeItem(cacheKey);
+      });
+      try {
+        window.localStorage.setItem(key, value);
+        return true;
+      } catch (retryError) {
+        return false;
+      }
+    }
+  }
+
+  function writeProductCache(items) {
+    const compactProducts = (items || []).map(product => {
+      const imagePath = String(product.image_path || product.image_url || "");
+      return {
+        id: product.id,
+        product_id: product.product_id,
+        sku: product.sku,
+        name: product.name,
+        short_name: product.short_name,
+        category: product.category,
+        product_type: product.product_type,
+        subcategory: product.subcategory,
+        shape: product.shape,
+        flavor: product.flavor,
+        selling_price: product.selling_price,
+        price: product.price,
+        stock: product.stock,
+        sold_out: product.sold_out,
+        is_active: product.is_active,
+        is_available: product.is_available,
+        track_inventory: product.track_inventory,
+        low_stock_threshold: product.low_stock_threshold,
+        note: product.note,
+        sort_order: product.sort_order,
+        image_path: /^data:/i.test(imagePath) ? "" : imagePath,
+        image_url: /^data:/i.test(imagePath) ? "" : imagePath
+      };
+    });
+    window.localStorage.removeItem(productsCacheKey);
+    return writeJson(productsCacheKey, compactProducts);
   }
 
   function saveCart() {
@@ -247,7 +300,7 @@
   }
 
   function saveLastSyncedAt() {
-    window.localStorage.setItem(lastSyncedAtKey, new Date().toISOString());
+    safeSetStorage(lastSyncedAtKey, new Date().toISOString());
   }
 
   function lastSyncedLabel() {
@@ -260,7 +313,7 @@
 
   function recordRetrySync() {
     const count = Number(window.localStorage.getItem(retrySyncKey) || 0) + 1;
-    window.localStorage.setItem(retrySyncKey, String(count));
+    safeSetStorage(retrySyncKey, String(count));
   }
 
   function pendingForToday() {
@@ -319,7 +372,7 @@
           .order("sort_order", { ascending: true });
         if (!result.error && Array.isArray(result.data) && result.data.length) {
           products = normalizeVisibleProducts(result.data);
-          writeJson(productsCacheKey, products);
+          writeProductCache(products);
           menuUsingCache = false;
           menuSyncError = "";
           window.clearTimeout(menuRetryTimer);
@@ -380,8 +433,8 @@
       promotions = (promotionResult.data || []).filter(promotionIsActive);
       writeJson(promotionsCacheKey, promotions);
       p1Enabled = true;
-      window.localStorage.setItem(p1EnabledKey, "true");
-      window.localStorage.setItem(currentRoleKey, currentRole);
+      safeSetStorage(p1EnabledKey, "true");
+      safeSetStorage(currentRoleKey, currentRole);
       writeJson(currentShiftKey, currentShift);
     } catch (error) {
       const cachedShift = readJson(currentShiftKey, null);

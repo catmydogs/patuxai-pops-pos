@@ -188,6 +188,19 @@ h1 {
   font-weight: 720;
 }
 
+.sync-button {
+  min-height: 30px;
+  border: 0;
+  padding: 2px 4px;
+  color: inherit;
+  background: transparent;
+  vertical-align: middle;
+}
+
+.sync-button:active {
+  opacity: 0.7;
+}
+
 .sync-badge::before {
   content: "";
   width: 7px;

@@ -30,6 +30,10 @@
   let appliedPromotion = null;
   let activeUpsellEvents = new Map();
   let upsellDismissed = false;
+  let menuRetryTimer = null;
+  let menuSyncInFlight = null;
+  let menuUsingCache = false;
+  let menuSyncError = "";
 
   function isProductUnavailable(product) {
     if (!product || product.is_active === false || product.is_available === false) return true;
@@ -103,6 +107,7 @@
     otherItemCount: document.querySelector("#otherItemCount"),
     topItem: document.querySelector("#topItem"),
     ordersBody: document.querySelector("#ordersBody"),
+    syncBadge: document.querySelector("#syncBadge"),
     lowStockAlert: document.querySelector("#lowStockAlert"),
     shiftScreen: document.querySelector("#shiftScreen"),
     openShiftForm: document.querySelector("#openShiftForm"),
@@ -272,31 +277,91 @@
       POS.setSyncStatus(`${pendingOrders.length} 单待同步`, "pending");
       return;
     }
+    if (menuUsingCache) {
+      POS.setSyncStatus("菜单待同步 · 点此重试", "pending");
+      return;
+    }
     const lastSynced = lastSyncedLabel();
     POS.setSyncStatus(lastSynced ? `在线 · ${lastSynced} 已同步` : "在线 · 已同步", "online");
   }
 
-  async function loadProducts() {
-    try {
-      const result = await client
-        .from("products")
-        .select("*")
-        .order("sort_order", { ascending: true });
-      if (result.error) throw result.error;
-      products = (result.data && result.data.length ? result.data : POS.productCatalog)
-        .map(POS.normalizeProduct)
-        .filter(product => product.is_deleted !== true)
-        .filter(product => !(POS.retiredProductIds || []).includes(product.id))
-        .filter(product => product.is_active !== false);
-      writeJson(productsCacheKey, products);
-    } catch (error) {
-      products = readJson(productsCacheKey, POS.productCatalog)
-        .map(POS.normalizeProduct)
-        .filter(product => product.is_deleted !== true)
-        .filter(product => !(POS.retiredProductIds || []).includes(product.id))
-        .filter(product => product.is_active !== false);
-      POS.showToast("已使用本地菜单");
+  function normalizeVisibleProducts(items) {
+    return (items || [])
+      .map(POS.normalizeProduct)
+      .filter(product => product.is_deleted !== true)
+      .filter(product => !(POS.retiredProductIds || []).includes(product.id))
+      .filter(product => product.is_active !== false);
+  }
+
+  function scheduleMenuRetry() {
+    window.clearTimeout(menuRetryTimer);
+    if (!window.navigator.onLine) return;
+    menuRetryTimer = window.setTimeout(async () => {
+      const synced = await loadProducts({ silent: true, attempts: 1 });
+      if (synced) {
+        renderAll();
+        POS.showToast("菜单和库存已同步");
+      }
+    }, 12000);
+  }
+
+  async function loadProducts(options = {}) {
+    if (menuSyncInFlight) return menuSyncInFlight;
+    const attempts = Math.max(1, Number(options.attempts || 2));
+    const silent = options.silent === true;
+
+    menuSyncInFlight = (async () => {
+      let lastError = null;
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        const result = await client
+          .from("products")
+          .select("*")
+          .order("sort_order", { ascending: true });
+        if (!result.error && Array.isArray(result.data) && result.data.length) {
+          products = normalizeVisibleProducts(result.data);
+          writeJson(productsCacheKey, products);
+          menuUsingCache = false;
+          menuSyncError = "";
+          window.clearTimeout(menuRetryTimer);
+          return true;
+        }
+
+        lastError = result.error || new Error("数据库没有返回产品数据");
+        if (attempt + 1 < attempts) {
+          await new Promise(resolve => window.setTimeout(resolve, 800 * (attempt + 1)));
+        }
+      }
+
+      const cachedProducts = readJson(productsCacheKey, []);
+      products = normalizeVisibleProducts(cachedProducts.length ? cachedProducts : POS.productCatalog);
+      menuUsingCache = true;
+      menuSyncError = String((lastError && lastError.message) || lastError || "网络连接失败");
+      scheduleMenuRetry();
+      if (!silent) {
+        POS.showToast(cachedProducts.length ? "菜单同步失败，暂用最近库存" : "菜单同步失败，请点击顶部重新同步");
+      }
+      return false;
+    })().finally(() => {
+      menuSyncInFlight = null;
+      updateSyncStatus();
+    });
+
+    return menuSyncInFlight;
+  }
+
+  async function manualMenuSync() {
+    if (!window.navigator.onLine) {
+      POS.showToast("当前离线，请检查网络");
+      return;
     }
+    POS.setSyncStatus("正在同步菜单", "pending");
+    const synced = await loadProducts({ silent: true, attempts: 3 });
+    if (synced) {
+      renderAll();
+      POS.showToast("菜单和真实库存已更新");
+      return;
+    }
+    POS.showToast(`同步失败：${menuSyncError || "请检查网络"}`);
   }
 
   async function loadP1Context(session) {
@@ -1348,6 +1413,7 @@
     retrySync(false).then(refresh).catch(error => POS.showToast(error.message));
   });
   window.addEventListener("offline", updateSyncStatus);
+  if (el.syncBadge) el.syncBadge.addEventListener("click", manualMenuSync);
 
   POS.initAuth(client, refresh).catch(error => POS.showToast(error.message));
 })();

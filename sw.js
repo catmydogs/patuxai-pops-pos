@@ -1,4 +1,4 @@
-const CACHE_NAME = "patuxai-pops-pos-20260721-storage-quota-r19";
+const CACHE_NAME = "patuxai-pops-pos-20260725-history-pagination-r20";
 const APP_SHELL = [
   "./",
   "./index.html",

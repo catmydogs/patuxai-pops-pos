@@ -1,5 +1,5 @@
 (function () {
-  const appVersion = "20260721-storage-quota-r19";
+  const appVersion = "20260725-history-pagination-r20";
   const productCatalog = [
     { id: "patuxai-mango-passion", name: "Patuxai - Mango & Passion Fruit", category: "Patuxai Pops", shape: "Patuxai", flavor: "Mango & Passion Fruit", shape_order: 1, flavor_order: 1, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/shapes/shape-patuxai.png", note: "芒果百香果", sort_order: 1 },
     { id: "patuxai-strawberry-milk", name: "Patuxai - Strawberry Milk", category: "Patuxai Pops", shape: "Patuxai", flavor: "Strawberry Milk", shape_order: 1, flavor_order: 2, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/shapes/shape-patuxai.png", note: "草莓牛奶", sort_order: 2 },
@@ -175,6 +175,7 @@
         filters: [],
         order: null,
         limit: null,
+        offset: null,
         payload: null,
         mode: "select",
         returning: null
@@ -188,6 +189,7 @@
           params.set("order", `${state.order.column}.${state.order.ascending ? "asc" : "desc"}`);
         }
         if (state.limit != null) params.set("limit", String(state.limit));
+        if (state.offset != null) params.set("offset", String(state.offset));
 
         const url = `${config.SUPABASE_URL}/rest/v1/${state.table}?${params.toString()}`;
         const options = {
@@ -256,6 +258,13 @@
         },
         limit(value) {
           state.limit = Math.max(0, Number(value || 0));
+          return this;
+        },
+        range(from, to) {
+          const start = Math.max(0, Number(from || 0));
+          const end = Math.max(start, Number(to || start));
+          state.offset = start;
+          state.limit = end - start + 1;
           return this;
         },
         eq(column, value) {

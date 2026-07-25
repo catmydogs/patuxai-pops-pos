@@ -294,6 +294,37 @@
     });
   }
 
+  async function fetchPagedRows(table, columns, orderColumn, options) {
+    const pageSize = 500;
+    const maxPages = 100;
+    const rows = [];
+    const ascending = options && options.ascending === true;
+
+    for (let page = 0; page < maxPages; page += 1) {
+      const start = page * pageSize;
+      const result = await client
+        .from(table)
+        .select(columns)
+        .order(orderColumn, { ascending })
+        .range(start, start + pageSize - 1);
+
+      if (result.error) return result;
+
+      const pageRows = result.data || [];
+      rows.push(...pageRows);
+      if (pageRows.length < pageSize) {
+        return { data: rows, error: null };
+      }
+    }
+
+    return {
+      data: rows,
+      error: {
+        message: `${table} 历史记录超过 ${pageSize * maxPages} 条，请缩小查询范围`
+      }
+    };
+  }
+
   async function loadAll() {
     const issues = [];
 
@@ -310,15 +341,17 @@
     }
 
     try {
-      let ordersResult = await client
-        .from("orders")
-        .select("id, shift_id, day, time_text, payment_method, total, total_amount, discount_amount, final_amount, status, cashier, note, created_at, is_test, promotion_id, promotion_code, promotion_note, promotion_name_snapshot, complimentary_reason, cancel_reason, cancelled_at, refund_amount, order_items(product_id, product_uid, name, product_name, category, product_type, subcategory, qty, quantity, price, unit_price, subtotal, item_type, promotion_code, gift_reason), payments(payment_id, payment_method, amount, payment_status, reference_number)")
-        .order("created_at", { ascending: false });
+      let ordersResult = await fetchPagedRows(
+        "orders",
+        "id, shift_id, day, time_text, payment_method, total, total_amount, discount_amount, final_amount, status, cashier, note, created_at, is_test, promotion_id, promotion_code, promotion_note, promotion_name_snapshot, complimentary_reason, cancel_reason, cancelled_at, refund_amount, order_items(product_id, product_uid, name, product_name, category, product_type, subcategory, qty, quantity, price, unit_price, subtotal, item_type, promotion_code, gift_reason), payments(payment_id, payment_method, amount, payment_status, reference_number)",
+        "created_at"
+      );
       if (ordersResult.error && /column|schema cache|relationship|select/i.test(ordersResult.error.message || "")) {
-        ordersResult = await client
-          .from("orders")
-          .select("id, day, time_text, payment_method, total, status, created_at, order_items(product_id, name, qty, price)")
-          .order("created_at", { ascending: false });
+        ordersResult = await fetchPagedRows(
+          "orders",
+          "id, day, time_text, payment_method, total, status, created_at, order_items(product_id, name, qty, price)",
+          "created_at"
+        );
       }
       if (ordersResult.error) throw ordersResult.error;
       orders = ordersResult.data || [];
@@ -340,10 +373,11 @@
     }
 
     try {
-      const movementsResult = await client
-        .from("inventory_movements")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const movementsResult = await fetchPagedRows(
+        "inventory_movements",
+        "*",
+        "created_at"
+      );
       if (movementsResult.error) throw movementsResult.error;
       inventoryMovements = movementsResult.data || [];
     } catch (error) {
@@ -370,7 +404,7 @@
       currentRole = ownProfile && ownProfile.is_active !== false ? ownProfile.role : "viewer";
       const results = await Promise.all([
         client.from("shifts").select("*").order("opened_at", { ascending: false }),
-        client.from("payments").select("*").order("created_at", { ascending: false }),
+        fetchPagedRows("payments", "*", "created_at"),
         client.from("promotions").select("*").order("created_at", { ascending: false }),
         client.from("promotion_usage").select("*").order("used_at", { ascending: false }),
         client.from("daily_operations").select("*").order("business_date", { ascending: false }),

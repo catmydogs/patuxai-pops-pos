@@ -896,19 +896,6 @@
     const image = product.image_path ? `<img class="product-image" src="${assetUrl(product.image_path)}" alt="${product.name}">` : "";
     const compact = mode === "compact";
     if (compact) {
-      if (sortMode) {
-        return `
-          <article class="product product-compact sortable-product ${low}" data-sort-id="${product.id}" ${productToneStyle(product.flavor)}>
-            ${image || `<div class="product-image product-image-placeholder">${POS.categoryLabel(product.category).slice(0, 2)}</div>`}
-            <div class="product-body">
-              <h2>${productLabel(product)}</h2>
-              <div class="meta"><span>${POS.categoryLabel(product.category)}</span><span>${stockText}</span></div>
-              <div class="price">${POS.money(product.selling_price)}</div>
-            </div>
-            <button class="sort-handle" type="button" data-sort-handle="${product.id}" aria-label="拖动调整 ${productLabel(product)} 的顺序">⋮⋮</button>
-          </article>
-        `;
-      }
       return `
         <article class="product product-compact ${low}" ${productToneStyle(product.flavor)}>
           ${image || `<div class="product-image product-image-placeholder">${POS.categoryLabel(product.category).slice(0, 2)}</div>`}
@@ -936,16 +923,29 @@
 
   function renderProductGroups(items) {
     if (!items.length) return `<div class="empty product-empty">没有符合条件的商品。</div>`;
+    const groups = [...new Set(items.map(product => product.category || "other"))];
     if (sortMode) {
       return `
-        <section class="product-group sorting-product-group" aria-label="商品排序">
-          <div class="extra-grid sortable-product-grid">
-            ${items.map(product => productCard(product, "compact")).join("")}
+        <section class="product-group sorting-product-group" aria-label="品类排序">
+          <div class="extra-grid sortable-category-grid">
+            ${groups.map(category => {
+              const categoryProducts = items.filter(product => (product.category || "other") === category);
+              const preview = categoryProducts.slice(0, 3).map(productLabel).join("、");
+              const more = categoryProducts.length > 3 ? `等 ${categoryProducts.length} 款` : `${categoryProducts.length} 款`;
+              return `
+                <article class="category-sort-card sortable-product" data-sort-category="${category}">
+                  <div class="category-sort-copy">
+                    <strong>${POS.categoryLabel(category)}</strong>
+                    <span>${preview}${preview ? " · " : ""}${more}</span>
+                  </div>
+                  <button class="sort-handle" type="button" data-sort-handle="${category}" aria-label="拖动调整 ${POS.categoryLabel(category)} 的顺序">⋮⋮</button>
+                </article>
+              `;
+            }).join("")}
           </div>
         </section>
       `;
     }
-    const groups = [...new Set(items.map(product => product.category || "other"))];
     return groups.map(category => {
       const categoryProducts = items.filter(product => (product.category || "other") === category);
       return `
@@ -975,7 +975,7 @@
 
   function enterSortMode() {
     if (!POS.canManage(currentRole)) {
-      POS.showToast("只有 Manager / Owner 可以调整商品排序");
+      POS.showToast("只有 Manager / Owner 可以调整品类排序");
       return;
     }
     sortOriginalOrder = products.map(product => product.id);
@@ -990,11 +990,11 @@
   }
 
   function orderedProductsFromGrid() {
-    const ids = [...el.productGrid.querySelectorAll("[data-sort-id]")].map(card => card.dataset.sortId);
-    const productMap = new Map(products.map(product => [product.id, product]));
+    const categoryOrder = [...el.productGrid.querySelectorAll("[data-sort-category]")].map(card => card.dataset.sortCategory);
+    const orderedIds = new Set(categoryOrder);
     return [
-      ...ids.map(id => productMap.get(id)).filter(Boolean),
-      ...products.filter(product => !ids.includes(product.id))
+      ...categoryOrder.flatMap(category => products.filter(product => (product.category || "other") === category)),
+      ...products.filter(product => !orderedIds.has(product.category || "other"))
     ];
   }
 
@@ -1037,17 +1037,17 @@
     writeProductCache(products);
     sortOriginalOrder = products.map(product => product.id);
     finishSortMode();
-    POS.showToast("商品排序已保存");
+    POS.showToast("品类排序已保存");
   }
 
   function beginProductDrag(event) {
     if (!sortMode) return;
     const handle = event.target.closest("[data-sort-handle]");
     if (!handle) return;
-    const card = handle.closest("[data-sort-id]");
+    const card = handle.closest("[data-sort-category]");
     if (!card) return;
     event.preventDefault();
-    sortDragId = card.dataset.sortId;
+    sortDragId = card.dataset.sortCategory;
     sortPointerId = event.pointerId;
     card.classList.add("dragging");
     if (el.productGrid.setPointerCapture) {
@@ -1068,18 +1068,19 @@
       if (event.clientY < areaRect.top + 84) scrollArea.scrollBy({ top: -18 });
       if (event.clientY > areaRect.bottom - 84) scrollArea.scrollBy({ top: 18 });
     }
-    const dragged = el.productGrid.querySelector(`[data-sort-id="${sortDragId}"]`);
-    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-sort-id]");
+    const cards = [...el.productGrid.querySelectorAll("[data-sort-category]")];
+    const dragged = cards.find(card => card.dataset.sortCategory === sortDragId);
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-sort-category]");
     if (!dragged || !target || dragged === target || !el.productGrid.contains(target)) return;
 
-    const cards = [...el.productGrid.querySelectorAll("[data-sort-id]")];
     if (cards.indexOf(dragged) < cards.indexOf(target)) target.after(dragged);
     else target.before(dragged);
   }
 
   function endProductDrag(event) {
     if (!sortDragId || (event.pointerId != null && event.pointerId !== sortPointerId)) return;
-    const dragged = el.productGrid.querySelector(`[data-sort-id="${sortDragId}"]`);
+    const dragged = [...el.productGrid.querySelectorAll("[data-sort-category]")]
+      .find(card => card.dataset.sortCategory === sortDragId);
     if (dragged) dragged.classList.remove("dragging");
     products = orderedProductsFromGrid();
     sortDragId = "";

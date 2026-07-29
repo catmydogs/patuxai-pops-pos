@@ -11,7 +11,7 @@
   <title>Patuxai Pops POS</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260729-pos-speed-r21">
+  <link rel="stylesheet" href="styles.css?v=20260729-category-order-r22">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -70,10 +70,10 @@
 
       <div class="catalog-toolbar">
         <nav class="tabs" id="categoryTabs" aria-label="商品分类"></nav>
-        <button class="ghost sort-mode-button" id="sortModeBtn" type="button" hidden>调整排序</button>
+        <button class="ghost sort-mode-button" id="sortModeBtn" type="button" hidden>调整品类排序</button>
       </div>
       <div class="sort-toolbar" id="sortToolbar" hidden>
-        <span>按住商品右上角的拖动按钮调整顺序</span>
+        <span>按住品类右侧的拖动按钮，调整整个品类区块的前后顺序</span>
         <div>
           <button class="ghost" id="cancelSortBtn" type="button">取消</button>
           <button class="button primary" id="saveSortBtn" type="button">保存排序</button>
@@ -212,8 +212,8 @@
   </section>
 
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260729-pos-speed-r21"></script>
-  <script src="common.js?v=20260729-pos-speed-r21"></script>
-  <script src="pos.js?v=20260729-pos-speed-r21"></script>
+  <script src="config.js?v=20260729-category-order-r22"></script>
+  <script src="common.js?v=20260729-category-order-r22"></script>
+  <script src="pos.js?v=20260729-category-order-r22"></script>
 </body>
 </html>

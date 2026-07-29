@@ -11,7 +11,7 @@
   <title>Patuxai Pops POS</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260725-history-pagination-r20">
+  <link rel="stylesheet" href="styles.css?v=20260729-pos-speed-r21">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -68,7 +68,17 @@
         </div>
       </section>
 
-      <nav class="tabs" id="categoryTabs" aria-label="商品分类"></nav>
+      <div class="catalog-toolbar">
+        <nav class="tabs" id="categoryTabs" aria-label="商品分类"></nav>
+        <button class="ghost sort-mode-button" id="sortModeBtn" type="button" hidden>调整排序</button>
+      </div>
+      <div class="sort-toolbar" id="sortToolbar" hidden>
+        <span>按住商品右上角的拖动按钮调整顺序</span>
+        <div>
+          <button class="ghost" id="cancelSortBtn" type="button">取消</button>
+          <button class="button primary" id="saveSortBtn" type="button">保存排序</button>
+        </div>
+      </div>
       <div class="stock-alert" id="lowStockAlert" hidden></div>
       <section class="grid" id="productGrid" aria-label="商品"></section>
 
@@ -122,6 +132,19 @@
           <div class="total"><span>应收</span><strong id="grandTotal">0 KIP</strong></div>
         </div>
         <div class="promotion-applied" id="promotionApplied" hidden></div>
+        <div class="quick-discount" id="quickDiscount">
+          <div class="quick-discount-head">
+            <span>折扣</span>
+            <button type="button" data-discount-clear>清除</button>
+          </div>
+          <div class="quick-discount-actions">
+            <button type="button" data-discount="5000">-5k</button>
+            <button type="button" data-discount="10000">-10k</button>
+            <button type="button" data-discount="20000">-20k</button>
+            <button type="button" data-discount-rate="10">-10%</button>
+          </div>
+          <input class="field-input" id="discountInput" inputmode="decimal" type="number" min="0" step="1000" placeholder="其他折扣金额">
+        </div>
         <div class="pay-methods" id="payMethods">
           <button class="pay active" data-pay="cash">Cash</button>
           <button class="pay" data-pay="qr">QR</button>
@@ -134,10 +157,6 @@
               <button class="pay" data-pay="other">其他支付</button>
             </div>
             <div class="advanced-order-fields">
-              <label class="discount-row" for="discountInput">
-                <span>手动折扣</span>
-                <input class="field-input" id="discountInput" inputmode="decimal" type="number" min="0" step="1000" placeholder="例如 10000">
-              </label>
               <label class="discount-row" id="discountReasonRow" for="discountReasonInput" hidden>
                 <span>折扣备注</span>
                 <input class="field-input" id="discountReasonInput" placeholder="选填">
@@ -149,7 +168,6 @@
         <div class="payment-confirm" id="paymentConfirm">
           <div class="qr-payment-display" id="qrPaymentDisplay" hidden><img id="qrPaymentImage" alt="QR 收款码"><strong id="qrPaymentAmount">应收 0 KIP</strong><span>确认到账后再完成收款</span></div>
           <label id="paymentReferenceRow" hidden>交易参考号<input class="field-input" id="paymentReferenceInput" placeholder="可选"></label>
-          <label class="confirm-check" id="paymentConfirmedRow" hidden><input id="paymentConfirmedInput" type="checkbox"> 已确认到账</label>
           <div class="mixed-payment-grid" id="mixedPaymentGrid" hidden>
             <label>Cash<input class="field-input" id="mixedCashInput" type="number" min="0" step="1000" value="0"></label>
             <label>QR<input class="field-input" id="mixedQrInput" type="number" min="0" step="1000" value="0"></label>
@@ -167,7 +185,7 @@
           <input class="field-input" id="cashInput" inputmode="decimal" type="number" min="0" step="1000" placeholder="实收金额 KIP">
           <div class="change" id="changeText">找零 0 KIP</div>
         </div>
-        <button class="primary" id="checkoutBtn" disabled>完成收款</button>
+        <button class="primary checkout-button" id="checkoutBtn" disabled>完成现金收款</button>
       </div>
     </aside>
   </div>
@@ -194,8 +212,8 @@
   </section>
 
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260725-history-pagination-r20"></script>
-  <script src="common.js?v=20260725-history-pagination-r20"></script>
-  <script src="pos.js?v=20260725-history-pagination-r20"></script>
+  <script src="config.js?v=20260729-pos-speed-r21"></script>
+  <script src="common.js?v=20260729-pos-speed-r21"></script>
+  <script src="pos.js?v=20260729-pos-speed-r21"></script>
 </body>
 </html>

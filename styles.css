@@ -3620,6 +3620,152 @@ aside {
   }
 }
 
+.catalog-toolbar {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.catalog-toolbar .tabs {
+  flex: 1 1 auto;
+}
+
+.sort-mode-button {
+  position: sticky;
+  top: 8px;
+  z-index: 19;
+  flex: 0 0 auto;
+  min-height: 44px;
+  margin-top: 8px;
+  background: #fff;
+}
+
+.sort-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 21;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(0, 113, 227, 0.24);
+  border-radius: 8px;
+  background: rgba(238, 247, 255, 0.97);
+  color: #245b88;
+  box-shadow: 0 8px 24px rgba(0, 70, 140, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+.sort-toolbar[hidden],
+.quick-discount[hidden] {
+  display: none;
+}
+
+.sort-toolbar > div {
+  display: flex;
+  gap: 8px;
+}
+
+.sort-toolbar .primary {
+  width: auto;
+  min-height: 44px;
+  padding: 8px 16px;
+}
+
+.sorting-product-group {
+  margin-top: 0;
+}
+
+.sortable-product {
+  position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform 0.14s ease, opacity 0.14s ease, box-shadow 0.14s ease;
+}
+
+.sortable-product.dragging {
+  z-index: 5;
+  opacity: 0.68;
+  transform: scale(0.985);
+  box-shadow: 0 14px 30px rgba(0, 77, 153, 0.18);
+}
+
+.sort-handle {
+  min-width: 58px;
+  min-height: 58px;
+  border: 1px solid rgba(0, 113, 227, 0.3);
+  border-radius: 8px;
+  background: #eef7ff;
+  color: #0069c8;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: grab;
+  touch-action: none;
+}
+
+.sort-handle:active {
+  cursor: grabbing;
+  background: #dceeff;
+}
+
+.quick-discount {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 10px;
+  border: 1px solid rgba(210, 210, 215, 0.84);
+  border-radius: 8px;
+  background: #fbfbfd;
+}
+
+.quick-discount-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.quick-discount-head button {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  padding: 5px 7px;
+}
+
+.quick-discount-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.quick-discount-actions button {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 730;
+}
+
+.quick-discount-actions button.active {
+  border-color: rgba(0, 113, 227, 0.5);
+  background: #eaf4ff;
+  color: #0065bd;
+}
+
+.checkout-button {
+  position: sticky;
+  bottom: max(0px, env(safe-area-inset-bottom));
+  z-index: 8;
+  margin-top: 4px;
+  box-shadow: 0 12px 26px rgba(32, 78, 48, 0.22);
+}
+
 /* Keep the POS usable in iPad portrait: catalog and checkout scroll separately. */
 @media (min-width: 720px) and (max-width: 980px) {
   .app {
@@ -3676,6 +3822,15 @@ aside {
   }
 
   .app .cart-list {
-    max-height: 32vh;
+    max-height: 28vh;
+  }
+
+  .sort-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sort-toolbar > div {
+    justify-content: flex-end;
   }
 }

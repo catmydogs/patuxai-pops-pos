@@ -34,6 +34,11 @@
   let menuSyncInFlight = null;
   let menuUsingCache = false;
   let menuSyncError = "";
+  let sortMode = false;
+  let sortOriginalOrder = [];
+  let sortDragId = "";
+  let sortPointerId = null;
+  let cashAutoExact = true;
 
   function isProductUnavailable(product) {
     if (!product || product.is_active === false || product.is_available === false) return true;
@@ -80,6 +85,10 @@
     categoryTabs: document.querySelector("#categoryTabs"),
     productGrid: document.querySelector("#productGrid"),
     searchInput: document.querySelector("#searchInput"),
+    sortModeBtn: document.querySelector("#sortModeBtn"),
+    sortToolbar: document.querySelector("#sortToolbar"),
+    cancelSortBtn: document.querySelector("#cancelSortBtn"),
+    saveSortBtn: document.querySelector("#saveSortBtn"),
     posTopbar: document.querySelector(".app > main > .topbar"),
     cartList: document.querySelector("#cartList"),
     cartPanel: document.querySelector(".app > aside"),
@@ -88,6 +97,7 @@
     subtotal: document.querySelector("#subtotal"),
     discountText: document.querySelector("#discountText"),
     discountInput: document.querySelector("#discountInput"),
+    quickDiscount: document.querySelector("#quickDiscount"),
     grandTotal: document.querySelector("#grandTotal"),
     checkoutBtn: document.querySelector("#checkoutBtn"),
     checkoutMore: document.querySelector("#checkoutMore"),
@@ -142,11 +152,15 @@
     orderNoteInput: document.querySelector("#orderNoteInput")
   };
 
+  function canApplyDiscount() {
+    return !p1Enabled || POS.canManage(currentRole);
+  }
+
   function cartTotals() {
     const subtotal = cart.reduce((sum, item) => sum + (item.item_type === "gift" ? 0 : Number(item.selling_price ?? item.price) * item.qty), 0);
     const automaticDiscount = promotionDiscount(appliedPromotion, subtotal);
     // Automatic promotions and manual discounts never stack on the same order.
-    const manualDiscount = !appliedPromotion && POS.canManage(currentRole) ? Number(el.discountInput && el.discountInput.value || 0) : 0;
+    const manualDiscount = !appliedPromotion && canApplyDiscount() ? Number(el.discountInput && el.discountInput.value || 0) : 0;
     const discount = payMethod === "complimentary"
       ? subtotal
       : Math.min(Math.max(0, automaticDiscount + manualDiscount), subtotal);
@@ -470,10 +484,12 @@
       openButton.textContent = openButton.disabled ? "Viewer 仅可查看后台报表" : "开始营业";
     }
     if (el.discountInput) {
-      el.discountInput.disabled = p1Enabled && !POS.canManage(currentRole);
-      el.discountInput.placeholder = el.discountInput.disabled ? "仅 Manager / Owner 可用" : "例如 10000";
+      el.discountInput.disabled = !canApplyDiscount();
+      el.discountInput.placeholder = el.discountInput.disabled ? "当前账号不可使用折扣" : "其他折扣金额";
     }
-    if (el.discountReasonRow) el.discountReasonRow.hidden = !POS.canManage(currentRole);
+    if (el.quickDiscount) el.quickDiscount.hidden = !canApplyDiscount();
+    if (el.discountReasonRow) el.discountReasonRow.hidden = true;
+    if (el.sortModeBtn) el.sortModeBtn.hidden = !POS.canManage(currentRole);
     renderPaymentControls();
   }
 
@@ -612,18 +628,15 @@
   }
 
   function renderPaymentControls() {
-    const needsConfirmation = ["qr", "bank_transfer", "mixed"].includes(payMethod);
     const qrImageUrl = String(window.POS_CONFIG && window.POS_CONFIG.QR_IMAGE_URL || "").trim();
     if (el.qrPaymentDisplay) el.qrPaymentDisplay.hidden = payMethod !== "qr" || !qrImageUrl;
     if (el.qrPaymentImage && qrImageUrl) el.qrPaymentImage.src = qrImageUrl;
     if (el.qrPaymentAmount) el.qrPaymentAmount.textContent = `应收 ${POS.money(cartTotals().total)}`;
     if (el.paymentReferenceRow) el.paymentReferenceRow.hidden = !["qr", "bank_transfer"].includes(payMethod);
-    if (el.paymentConfirmedRow) el.paymentConfirmedRow.hidden = !needsConfirmation;
     if (el.mixedPaymentGrid) el.mixedPaymentGrid.hidden = payMethod !== "mixed";
     if (el.complimentaryReasonRow) el.complimentaryReasonRow.hidden = payMethod !== "complimentary";
     if (el.cashInput && el.cashInput.parentElement) el.cashInput.parentElement.hidden = payMethod !== "cash";
     if (el.cashPresets) el.cashPresets.hidden = payMethod !== "cash";
-    if (el.paymentConfirmedInput && !needsConfirmation) el.paymentConfirmedInput.checked = false;
     updateMixedTotal();
   }
 
@@ -637,18 +650,15 @@
   }
 
   function buildPayments(total) {
-    const confirmed = !el.paymentConfirmedInput || el.paymentConfirmedInput.checked;
     const reference = String(el.paymentReferenceInput && el.paymentReferenceInput.value || "").trim();
     if (payMethod === "cash") return [{ payment_method: "cash", amount: total, payment_status: "confirmed", reference_number: "" }];
     if (["qr", "bank_transfer"].includes(payMethod)) {
-      if (!confirmed) throw new Error("请先确认款项已经到账");
       return [{ payment_method: payMethod, amount: total, payment_status: "confirmed", reference_number: reference }];
     }
     if (payMethod === "mixed") {
       const amounts = mixedAmounts();
       const sum = amounts.cash + amounts.qr + amounts.bank_transfer;
       if (sum !== total) throw new Error("混合支付合计必须等于应收金额");
-      if ((amounts.qr > 0 || amounts.bank_transfer > 0) && !confirmed) throw new Error("请先确认 QR 或转账已经到账");
       return Object.entries(amounts).filter(([, amount]) => amount > 0).map(([method, amount]) => ({
         payment_method: method,
         amount,
@@ -870,7 +880,7 @@
   }
 
   function renderCategories() {
-    el.categoryTabs.hidden = false;
+    el.categoryTabs.hidden = sortMode;
     const categories = ["全部", ...new Set(products.map(product => product.category))];
     el.categoryTabs.innerHTML = categories.map(category => {
       const active = category === activeCategory ? "active" : "";
@@ -886,6 +896,19 @@
     const image = product.image_path ? `<img class="product-image" src="${assetUrl(product.image_path)}" alt="${product.name}">` : "";
     const compact = mode === "compact";
     if (compact) {
+      if (sortMode) {
+        return `
+          <article class="product product-compact sortable-product ${low}" data-sort-id="${product.id}" ${productToneStyle(product.flavor)}>
+            ${image || `<div class="product-image product-image-placeholder">${POS.categoryLabel(product.category).slice(0, 2)}</div>`}
+            <div class="product-body">
+              <h2>${productLabel(product)}</h2>
+              <div class="meta"><span>${POS.categoryLabel(product.category)}</span><span>${stockText}</span></div>
+              <div class="price">${POS.money(product.selling_price)}</div>
+            </div>
+            <button class="sort-handle" type="button" data-sort-handle="${product.id}" aria-label="拖动调整 ${productLabel(product)} 的顺序">⋮⋮</button>
+          </article>
+        `;
+      }
       return `
         <article class="product product-compact ${low}" ${productToneStyle(product.flavor)}>
           ${image || `<div class="product-image product-image-placeholder">${POS.categoryLabel(product.category).slice(0, 2)}</div>`}
@@ -913,6 +936,15 @@
 
   function renderProductGroups(items) {
     if (!items.length) return `<div class="empty product-empty">没有符合条件的商品。</div>`;
+    if (sortMode) {
+      return `
+        <section class="product-group sorting-product-group" aria-label="商品排序">
+          <div class="extra-grid sortable-product-grid">
+            ${items.map(product => productCard(product, "compact")).join("")}
+          </div>
+        </section>
+      `;
+    }
     const groups = [...new Set(items.map(product => product.category || "other"))];
     return groups.map(category => {
       const categoryProducts = items.filter(product => (product.category || "other") === category);
@@ -931,14 +963,127 @@
   }
 
   function renderProducts() {
-    const query = el.searchInput.value.trim().toLowerCase();
+    const query = sortMode ? "" : el.searchInput.value.trim().toLowerCase();
     const visible = products.filter(product => {
-      const categoryMatch = activeCategory === "全部" || product.category === activeCategory;
+      const categoryMatch = sortMode || activeCategory === "全部" || product.category === activeCategory;
       const queryMatch = !query || `${product.name}${product.short_name || ""}${product.category}${product.subcategory || ""}${product.shape || ""}${product.flavor || ""}${product.note || ""}`.toLowerCase().includes(query);
       return categoryMatch && queryMatch;
     });
 
     el.productGrid.innerHTML = renderProductGroups(visible);
+  }
+
+  function enterSortMode() {
+    if (!POS.canManage(currentRole)) {
+      POS.showToast("只有 Manager / Owner 可以调整商品排序");
+      return;
+    }
+    sortOriginalOrder = products.map(product => product.id);
+    sortMode = true;
+    activeCategory = "全部";
+    el.searchInput.value = "";
+    el.searchInput.disabled = true;
+    el.categoryTabs.hidden = true;
+    el.sortModeBtn.hidden = true;
+    el.sortToolbar.hidden = false;
+    renderProducts();
+  }
+
+  function orderedProductsFromGrid() {
+    const ids = [...el.productGrid.querySelectorAll("[data-sort-id]")].map(card => card.dataset.sortId);
+    const productMap = new Map(products.map(product => [product.id, product]));
+    return [
+      ...ids.map(id => productMap.get(id)).filter(Boolean),
+      ...products.filter(product => !ids.includes(product.id))
+    ];
+  }
+
+  function finishSortMode() {
+    sortMode = false;
+    sortDragId = "";
+    sortPointerId = null;
+    el.searchInput.disabled = false;
+    el.categoryTabs.hidden = false;
+    el.sortToolbar.hidden = true;
+    el.sortModeBtn.hidden = !POS.canManage(currentRole);
+    renderAll();
+  }
+
+  function cancelProductSort() {
+    const productMap = new Map(products.map(product => [product.id, product]));
+    products = [
+      ...sortOriginalOrder.map(id => productMap.get(id)).filter(Boolean),
+      ...products.filter(product => !sortOriginalOrder.includes(product.id))
+    ];
+    finishSortMode();
+  }
+
+  async function saveProductSort() {
+    products = orderedProductsFromGrid();
+    POS.setBusy(el.saveSortBtn, true, "保存中");
+    const results = await Promise.all(products.map((product, index) => client
+      .from("products")
+      .update({ sort_order: (index + 1) * 10 })
+      .eq("id", product.id)));
+    POS.setBusy(el.saveSortBtn, false);
+
+    const failed = results.find(result => result.error);
+    if (failed) {
+      POS.showToast(failed.error.message || "排序保存失败");
+      return;
+    }
+
+    products = products.map((product, index) => ({ ...product, sort_order: (index + 1) * 10 }));
+    writeProductCache(products);
+    sortOriginalOrder = products.map(product => product.id);
+    finishSortMode();
+    POS.showToast("商品排序已保存");
+  }
+
+  function beginProductDrag(event) {
+    if (!sortMode) return;
+    const handle = event.target.closest("[data-sort-handle]");
+    if (!handle) return;
+    const card = handle.closest("[data-sort-id]");
+    if (!card) return;
+    event.preventDefault();
+    sortDragId = card.dataset.sortId;
+    sortPointerId = event.pointerId;
+    card.classList.add("dragging");
+    if (el.productGrid.setPointerCapture) {
+      try {
+        el.productGrid.setPointerCapture(event.pointerId);
+      } catch (error) {
+        // Pointer capture is optional on older iPad Safari versions.
+      }
+    }
+  }
+
+  function moveProductDrag(event) {
+    if (!sortMode || !sortDragId || event.pointerId !== sortPointerId) return;
+    event.preventDefault();
+    const scrollArea = el.productGrid.closest("main");
+    if (scrollArea) {
+      const areaRect = scrollArea.getBoundingClientRect();
+      if (event.clientY < areaRect.top + 84) scrollArea.scrollBy({ top: -18 });
+      if (event.clientY > areaRect.bottom - 84) scrollArea.scrollBy({ top: 18 });
+    }
+    const dragged = el.productGrid.querySelector(`[data-sort-id="${sortDragId}"]`);
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-sort-id]");
+    if (!dragged || !target || dragged === target || !el.productGrid.contains(target)) return;
+
+    const cards = [...el.productGrid.querySelectorAll("[data-sort-id]")];
+    if (cards.indexOf(dragged) < cards.indexOf(target)) target.after(dragged);
+    else target.before(dragged);
+  }
+
+  function endProductDrag(event) {
+    if (!sortDragId || (event.pointerId != null && event.pointerId !== sortPointerId)) return;
+    const dragged = el.productGrid.querySelector(`[data-sort-id="${sortDragId}"]`);
+    if (dragged) dragged.classList.remove("dragging");
+    products = orderedProductsFromGrid();
+    sortDragId = "";
+    sortPointerId = null;
   }
 
   function flashAddButton(button, productName) {
@@ -987,6 +1132,15 @@
     return product;
   }
 
+  function checkoutButtonLabel(total) {
+    if (payMethod === "qr") return `确认 QR 到账 · ${POS.money(total)}`;
+    if (payMethod === "bank_transfer") return `确认转账到账 · ${POS.money(total)}`;
+    if (payMethod === "mixed") return `确认混合支付 · ${POS.money(total)}`;
+    if (payMethod === "complimentary") return "确认赠送";
+    if (payMethod === "other") return `完成其他收款 · ${POS.money(total)}`;
+    return `完成现金收款 · ${POS.money(total)}`;
+  }
+
   function renderCart() {
     if (cart.length === 0) {
       el.cartList.innerHTML = `<div class="empty">点选左侧商品后，这里会生成当前订单。</div>`;
@@ -1025,7 +1179,9 @@
     }
     el.subtotal.textContent = POS.money(totals.subtotal);
     if (el.discountText) el.discountText.textContent = totals.discount ? `-${POS.money(totals.discount)}` : POS.money(0);
-    document.querySelectorAll(".summary-detail").forEach(row => { row.hidden = totals.discount <= 0; });
+    if (el.discountText && el.discountText.closest(".summary-detail")) {
+      el.discountText.closest(".summary-detail").hidden = totals.discount <= 0;
+    }
     el.grandTotal.textContent = POS.money(totals.total);
     if (el.promotionApplied) {
       el.promotionApplied.hidden = !appliedPromotion;
@@ -1035,18 +1191,42 @@
     }
     if (el.discountInput) {
       const lockedByPromotion = Boolean(appliedPromotion);
-      el.discountInput.disabled = lockedByPromotion || (p1Enabled && !POS.canManage(currentRole));
+      el.discountInput.disabled = lockedByPromotion || !canApplyDiscount();
       if (lockedByPromotion) el.discountInput.value = "";
       el.discountInput.placeholder = lockedByPromotion
         ? "自动促销生效时不可叠加手动折扣"
-        : el.discountInput.disabled ? "仅 Manager / Owner 可用" : "例如 10000";
+        : el.discountInput.disabled ? "当前账号不可使用折扣" : "其他折扣金额";
+      if (el.quickDiscount) {
+        el.quickDiscount.querySelectorAll("[data-discount], [data-discount-rate], [data-discount-clear]").forEach(button => {
+          button.disabled = el.discountInput.disabled;
+        });
+        el.quickDiscount.querySelectorAll("[data-discount]").forEach(button => {
+          button.classList.toggle("active", Number(button.dataset.discount) === totals.manualDiscount);
+        });
+        el.quickDiscount.querySelectorAll("[data-discount-rate]").forEach(button => {
+          const rateAmount = Math.round(totals.subtotal * Number(button.dataset.discountRate) / 100);
+          button.classList.toggle("active", rateAmount > 0 && rateAmount === totals.manualDiscount);
+        });
+      }
     }
-    if (el.discountReasonRow) el.discountReasonRow.hidden = !(POS.canManage(currentRole) && totals.manualDiscount > 0);
-    el.checkoutBtn.disabled = checkoutInFlight || cart.length === 0 || (totals.total <= 0 && payMethod !== "complimentary");
+    if (el.discountReasonRow) el.discountReasonRow.hidden = true;
     renderUpsellHint();
     updateCashPresets(totals.total);
+    if (payMethod === "cash" && cashAutoExact) {
+      el.cashInput.value = cart.length ? String(totals.total) : "";
+    }
     updateChange();
     updateMixedTotal();
+
+    const mixed = mixedAmounts();
+    const mixedTotal = mixed.cash + mixed.qr + mixed.bank_transfer;
+    const paymentReady = payMethod === "cash"
+      ? Number(el.cashInput.value || 0) >= totals.total
+      : payMethod === "mixed"
+        ? mixedTotal === totals.total && totals.total > 0
+        : payMethod === "complimentary" || totals.total > 0;
+    el.checkoutBtn.textContent = checkoutButtonLabel(totals.total);
+    el.checkoutBtn.disabled = checkoutInFlight || cart.length === 0 || !paymentReady;
   }
 
   async function recordUpsell(eventType, product, action) {
@@ -1191,6 +1371,7 @@
     activeUpsellEvents = new Map();
     upsellDismissed = false;
     payMethod = "cash";
+    cashAutoExact = true;
     document.querySelectorAll(".pay").forEach(item => item.classList.toggle("active", item.dataset.pay === "cash"));
     if (el.checkoutMore) el.checkoutMore.open = false;
     saveCart();
@@ -1399,6 +1580,7 @@
   }
 
   el.productGrid.addEventListener("click", event => {
+    if (sortMode) return;
     const button = event.target.closest("[data-id]");
     if (!button) return;
     const product = addToCart(button.dataset.id);
@@ -1408,6 +1590,13 @@
       if (el.cartList) el.cartList.scrollTop = el.cartList.scrollHeight;
     }
   });
+  el.productGrid.addEventListener("pointerdown", beginProductDrag);
+  el.productGrid.addEventListener("pointermove", moveProductDrag);
+  el.productGrid.addEventListener("pointerup", endProductDrag);
+  el.productGrid.addEventListener("pointercancel", endProductDrag);
+  if (el.sortModeBtn) el.sortModeBtn.addEventListener("click", enterSortMode);
+  if (el.cancelSortBtn) el.cancelSortBtn.addEventListener("click", cancelProductSort);
+  if (el.saveSortBtn) el.saveSortBtn.addEventListener("click", saveProductSort);
 
   el.cartList.addEventListener("click", event => {
     const button = event.target.closest("[data-action]");
@@ -1419,6 +1608,7 @@
     const button = event.target.closest("[data-pay]");
     if (!button) return;
     payMethod = button.dataset.pay;
+    if (payMethod === "cash") cashAutoExact = true;
     document.querySelectorAll(".pay").forEach(item => item.classList.toggle("active", item === button));
     if (el.checkoutMore && ["cash", "qr", "bank_transfer"].includes(payMethod)) el.checkoutMore.open = false;
     renderPaymentControls();
@@ -1429,14 +1619,35 @@
     const button = event.target.closest("[data-cash]");
     if (!button) return;
     const { total } = cartTotals();
+    cashAutoExact = button.dataset.cash === "exact";
     el.cashInput.value = button.dataset.cash === "exact" ? total : button.dataset.cash;
-    updateChange();
+    renderCart();
   });
 
   el.searchInput.addEventListener("input", renderProducts);
   if (el.discountInput) el.discountInput.addEventListener("input", renderCart);
-  [el.mixedCashInput, el.mixedQrInput, el.mixedTransferInput].filter(Boolean).forEach(input => input.addEventListener("input", updateMixedTotal));
-  el.cashInput.addEventListener("input", updateChange);
+  if (el.quickDiscount) {
+    el.quickDiscount.addEventListener("click", event => {
+      const clearButton = event.target.closest("[data-discount-clear]");
+      const amountButton = event.target.closest("[data-discount]");
+      const rateButton = event.target.closest("[data-discount-rate]");
+      if (!clearButton && !amountButton && !rateButton) return;
+      if (!canApplyDiscount() || el.discountInput.disabled) return;
+
+      if (clearButton) el.discountInput.value = "";
+      if (amountButton) el.discountInput.value = amountButton.dataset.discount;
+      if (rateButton) {
+        const subtotal = cartTotals().subtotal;
+        el.discountInput.value = String(Math.round(subtotal * Number(rateButton.dataset.discountRate) / 100));
+      }
+      renderCart();
+    });
+  }
+  [el.mixedCashInput, el.mixedQrInput, el.mixedTransferInput].filter(Boolean).forEach(input => input.addEventListener("input", renderCart));
+  el.cashInput.addEventListener("input", () => {
+    cashAutoExact = false;
+    renderCart();
+  });
   el.checkoutBtn.addEventListener("click", checkout);
   if (el.openShiftForm) el.openShiftForm.addEventListener("submit", openShift);
   if (el.closeShiftBtn) el.closeShiftBtn.addEventListener("click", openCloseShiftSheet);

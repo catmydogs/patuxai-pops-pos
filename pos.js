@@ -1020,20 +1020,48 @@
 
   async function saveProductSort() {
     products = orderedProductsFromGrid();
+    const intendedCategoryOrder = [...new Set(products.map(product => product.category || "other"))];
     POS.setBusy(el.saveSortBtn, true, "保存中");
-    const results = await Promise.all(products.map((product, index) => client
-      .from("products")
-      .update({ sort_order: (index + 1) * 10 })
-      .eq("id", product.id)));
-    POS.setBusy(el.saveSortBtn, false);
+    const results = await Promise.all(products.map(async (product, index) => {
+      const order = (index + 1) * 10;
+      let result = await client
+        .from("products")
+        .update({ sort_order: order, display_order: order })
+        .eq("id", product.id);
+      if (result.error && /display_order|column|schema cache/i.test(result.error.message || "")) {
+        result = await client
+          .from("products")
+          .update({ sort_order: order })
+          .eq("id", product.id);
+      }
+      return result;
+    }));
 
     const failed = results.find(result => result.error);
     if (failed) {
+      POS.setBusy(el.saveSortBtn, false);
       POS.showToast(failed.error.message || "排序保存失败");
       return;
     }
 
-    products = products.map((product, index) => ({ ...product, sort_order: (index + 1) * 10 }));
+    const verification = await client
+      .from("products")
+      .select("*")
+      .order("sort_order", { ascending: true });
+    POS.setBusy(el.saveSortBtn, false);
+    if (verification.error) {
+      POS.showToast("排序已写入，但重新校验失败，请点击顶部同步");
+      return;
+    }
+
+    const verifiedProducts = normalizeVisibleProducts(verification.data || []);
+    const verifiedCategoryOrder = [...new Set(verifiedProducts.map(product => product.category || "other"))];
+    if (intendedCategoryOrder.join("|") !== verifiedCategoryOrder.join("|")) {
+      POS.showToast("云端排序未保持，请重试");
+      return;
+    }
+
+    products = verifiedProducts;
     writeProductCache(products);
     sortOriginalOrder = products.map(product => product.id);
     finishSortMode();

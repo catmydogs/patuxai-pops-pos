@@ -113,6 +113,8 @@
     productFilters: document.querySelector("#productFilters"),
     adminShortcuts: document.querySelector("#adminShortcuts"),
     adminTopbar: document.querySelector(".page > .topbar"),
+    adminTitle: document.querySelector("#adminTitle"),
+    adminRoleBadge: document.querySelector("#adminRoleBadge"),
     backTop: document.querySelector("#backTop"),
     businessDayForm: document.querySelector("#businessDayForm"),
     businessDayHistory: document.querySelector("#businessDayHistory"),
@@ -401,6 +403,13 @@
       if (profileResult.error) throw profileResult.error;
       userProfiles = profileResult.data || [];
       const ownProfile = userProfiles.find(profile => currentSession && profile.user_id === currentSession.user.id);
+      if (ownProfile && ownProfile.is_active === false) {
+        POS.showToast("此员工账号已停用");
+        await new Promise(resolve => window.setTimeout(resolve, 900));
+        await client.auth.signOut();
+        window.location.reload();
+        return;
+      }
       currentRole = ownProfile && ownProfile.is_active !== false ? ownProfile.role : "viewer";
       const results = await Promise.all([
         client.from("shifts").select("*").order("opened_at", { ascending: false }),
@@ -1291,6 +1300,12 @@
   function renderP1Management() {
     const manager = POS.canManage(currentRole);
     if (el.currentRoleText) el.currentRoleText.textContent = p1Enabled ? `当前权限：${POS.roleLabel(currentRole)}` : "尚未执行 P1 数据库升级";
+    document.body.dataset.posRole = currentRole;
+    if (el.adminRoleBadge) {
+      el.adminRoleBadge.textContent = currentRole === "owner" ? "Owner 版" : currentRole === "manager" ? "管理版" : currentRole === "cashier" ? "员工工具" : "只读版";
+      el.adminRoleBadge.dataset.role = currentRole;
+    }
+    if (el.adminTitle) el.adminTitle.textContent = currentRole === "cashier" ? "员工工具" : "后台管理";
 
     const shiftCashierQuery = String(el.shiftCashierFilter && el.shiftCashierFilter.value || "").trim().toLowerCase();
     const shiftStatusQuery = String(el.shiftStatusFilter && el.shiftStatusFilter.value || "");
@@ -1347,7 +1362,11 @@
       </div>`).join("") : `<div class="empty">点击“刷新所选日期”生成对账结果。</div>`;
 
     if (el.dataQualityList) el.dataQualityList.innerHTML = dataQualityIssues.length ? dataQualityIssues.map(row => `<div class="alert-item ${escapeAttr(row.severity)}"><strong>${escapeHtml(row.issue_type)}</strong><span>${escapeHtml(row.detail || row.record_id)}</span></div>`).join("") : `<div class="empty">当前未发现结构性数据问题。</div>`;
-    if (el.rolesList) el.rolesList.innerHTML = userProfiles.length ? userProfiles.map(row => `<div class="business-row"><div><strong>${escapeHtml(row.display_name || row.email || row.user_id)}</strong><span>${row.is_active === false ? "已停用" : "可用"}</span></div>${currentRole === "owner" ? `<select class="field-input role-select" data-role-user="${row.user_id}">${["owner", "manager", "cashier", "viewer"].map(role => `<option value="${role}" ${row.role === role ? "selected" : ""}>${POS.roleLabel(role)}</option>`).join("")}</select>` : `<strong>${POS.roleLabel(row.role)}</strong>`}</div>`).join("") : `<div class="empty">当前账号只能查看自己的权限。</div>`;
+    if (el.rolesList) el.rolesList.innerHTML = userProfiles.length ? userProfiles.map(row => {
+      const isSelf = Boolean(currentSession && currentSession.user && currentSession.user.id === row.user_id);
+      const controls = currentRole === "owner" ? `<div class="role-controls"><select class="field-input role-select" data-role-user="${row.user_id}" ${isSelf ? "disabled" : ""}>${["owner", "manager", "cashier", "viewer"].map(role => `<option value="${role}" ${row.role === role ? "selected" : ""}>${POS.roleLabel(role)}</option>`).join("")}</select><button class="mini-button" type="button" data-user-active="${row.user_id}" data-next-active="${row.is_active === false ? "true" : "false"}" ${isSelf ? "disabled" : ""}>${row.is_active === false ? "启用" : "停用"}</button></div>` : `<strong>${POS.roleLabel(row.role)}</strong>`;
+      return `<div class="business-row"><div><strong>${escapeHtml(row.display_name || row.email || row.user_id)}</strong><span>${POS.roleLabel(row.role)} · ${row.is_active === false ? "已停用" : "可登录"}${isSelf ? " · 当前账号" : ""}</span></div>${controls}</div>`;
+    }).join("") : `<div class="empty">当前账号只能查看自己的权限。</div>`;
     if (el.auditList) el.auditList.innerHTML = auditLogs.length ? auditLogs.slice(0, 40).map(row => `<div class="business-row"><div><strong>${escapeHtml(row.action || row.action_type || "操作")}</strong><span>${escapeHtml(row.entity_type || "")} · ${escapeHtml(String(row.created_at || "").replace("T", " ").slice(0, 16))}</span></div><span>${escapeHtml(row.reason || row.note || "")}</span></div>`).join("") : `<div class="empty">无可查看的操作日志。</div>`;
     if (p1Enabled) {
       const allowedViews = currentRole === "cashier"
@@ -2527,6 +2546,14 @@
     await refresh(currentSession);
   }
 
+  async function updateUserActive(userId, isActive) {
+    if (currentRole !== "owner" || !currentSession || userId === currentSession.user.id) return;
+    const result = await client.from("user_profiles").update({ is_active: isActive, updated_at: new Date().toISOString() }).eq("user_id", userId);
+    if (result.error) return POS.showToast(result.error.message || "账号状态更新失败");
+    POS.showToast(isActive ? "员工账号已启用" : "员工账号已停用");
+    await refresh(currentSession);
+  }
+
   async function testConnection() {
     POS.setBusy(el.testConnection, true, "测试中");
     const result = await client
@@ -2769,6 +2796,11 @@
     const reviewButton = event.target.closest("[data-review-reconciliation]");
     if (reviewButton) {
       refreshReconciliation(true, reviewButton.dataset.reviewReconciliation);
+      return;
+    }
+    const userActiveButton = event.target.closest("[data-user-active]");
+    if (userActiveButton) {
+      updateUserActive(userActiveButton.dataset.userActive, userActiveButton.dataset.nextActive === "true");
     }
   });
 

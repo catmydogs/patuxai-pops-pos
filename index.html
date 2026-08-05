@@ -11,7 +11,7 @@
   <title>Patuxai Pops POS</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260729-category-order-fix-r23">
+  <link rel="stylesheet" href="styles.css?v=20260802-reliable-offline-r25">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -57,12 +57,12 @@
           <div>
             <span class="brand-eyebrow">VIENTIANE · LAOS</span>
             <h1>POS 收银</h1>
-            <div class="subtle"><span id="todayText"></span> · <span id="signedInAs"></span> · <span class="shift-badge" id="shiftStatus">未开班</span> · <button class="sync-badge sync-button online" id="syncBadge" type="button" title="点击重新同步菜单和库存" aria-label="重新同步菜单和库存">在线</button></div>
+            <div class="subtle"><span id="todayText"></span> · <span id="signedInAs"></span> · <span class="role-mode-badge" id="roleModeBadge">读取权限</span> · <span class="shift-badge" id="shiftStatus">未开班</span> · <button class="sync-badge sync-button online" id="syncBadge" type="button" title="点击重新同步菜单和库存" aria-label="重新同步菜单和库存">在线</button></div>
           </div>
         </div>
         <div class="toolbar">
           <input class="search" id="searchInput" type="search" placeholder="搜索商品或口味">
-          <a class="ghost" href="admin.html">后台统计</a>
+          <a class="ghost" id="managementLink" href="admin.html#home">Owner 后台</a>
           <button class="ghost" id="closeShiftBtn" type="button" hidden>交班</button>
           <button class="ghost" id="logoutBtn">退出</button>
         </div>
@@ -79,10 +79,14 @@
           <button class="button primary" id="saveSortBtn" type="button">保存排序</button>
         </div>
       </div>
+      <div class="order-sync-alert" id="orderSyncAlert" hidden>
+        <div><strong id="orderSyncTitle">订单已安全保存在本机</strong><span id="orderSyncDetail"></span></div>
+        <button class="ghost" id="retryOrdersBtn" type="button">重新同步</button>
+      </div>
       <div class="stock-alert" id="lowStockAlert" hidden></div>
       <section class="grid" id="productGrid" aria-label="商品"></section>
 
-      <section class="reports" aria-label="今日报表">
+      <section class="reports" id="ownerReports" aria-label="今日报表">
         <div class="stat"><span>今日销售额</span><strong id="salesTotal">0 KIP</strong></div>
         <div class="stat"><span>订单数</span><strong id="orderCount">0</strong></div>
         <div class="stat"><span>总售出件数</span><strong id="itemCount">0</strong></div>
@@ -153,7 +157,7 @@
             <summary>更多选项</summary>
             <div class="more-pay-methods">
               <button class="pay" data-pay="mixed">混合支付</button>
-              <button class="pay" data-pay="complimentary">赠送</button>
+              <button class="pay" id="complimentaryPayBtn" data-pay="complimentary">赠送</button>
               <button class="pay" data-pay="other">其他支付</button>
             </div>
             <div class="advanced-order-fields">
@@ -212,8 +216,8 @@
   </section>
 
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260729-category-order-fix-r23"></script>
-  <script src="common.js?v=20260729-category-order-fix-r23"></script>
-  <script src="pos.js?v=20260729-category-order-fix-r23"></script>
+  <script src="config.js?v=20260802-reliable-offline-r25"></script>
+  <script src="common.js?v=20260802-reliable-offline-r25"></script>
+  <script src="pos.js?v=20260802-reliable-offline-r25"></script>
 </body>
 </html>

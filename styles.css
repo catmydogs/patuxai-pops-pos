@@ -513,6 +513,51 @@ h1 {
   color: var(--danger);
 }
 
+.order-sync-alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(194, 144, 32, 0.34);
+  border-radius: 8px;
+  background: #fff7dc;
+  color: #624b12;
+}
+
+.order-sync-alert[hidden] {
+  display: none;
+}
+
+.order-sync-alert.attention {
+  border-color: rgba(190, 65, 65, 0.34);
+  background: #fff0f0;
+  color: #7c2929;
+}
+
+.order-sync-alert > div {
+  display: grid;
+  gap: 3px;
+}
+
+.order-sync-alert span {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.order-sync-alert .ghost {
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+@media (max-width: 700px) {
+  .order-sync-alert {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .stock-alert[hidden] {
   display: none;
 }
@@ -1236,6 +1281,66 @@ aside {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
   margin: 22px 0 18px;
+}
+
+.reports[hidden],
+.pay[hidden] {
+  display: none !important;
+}
+
+.role-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid rgba(71, 122, 90, 0.28);
+  border-radius: 999px;
+  background: var(--mint-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.role-mode-badge[data-role="cashier"] {
+  border-color: rgba(51, 102, 166, 0.24);
+  background: var(--sky-soft);
+  color: #315f93;
+}
+
+.role-mode-badge[data-role="viewer"] {
+  border-color: rgba(110, 110, 110, 0.2);
+  background: #f1f2f1;
+  color: var(--muted);
+}
+
+.role-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.role-controls .role-select {
+  min-width: 112px;
+}
+
+.section-help {
+  margin: -4px 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+@media (max-width: 700px) {
+  .role-controls {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .role-controls .role-select {
+    flex: 1;
+  }
 }
 
 .stat,

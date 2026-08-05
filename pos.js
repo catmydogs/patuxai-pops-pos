@@ -7,6 +7,9 @@
   const legacyPendingOrdersKey = "patuxai-pops-pending-orders";
   const lastSyncedAtKey = "patuxai-pops-last_synced_at";
   const retrySyncKey = "patuxai-pops-retry_sync_count";
+  const orderDbName = "patuxai-pops-pos";
+  const orderDbVersion = 1;
+  const orderStoreName = "orders";
   const cartCacheKey = `patuxai-pops-cart-${todayKey}`;
   const p1EnabledKey = "patuxai-pops-p1-enabled";
   const currentRoleKey = "patuxai-pops-current-role";
@@ -39,11 +42,24 @@
   let sortDragId = "";
   let sortPointerId = null;
   let cashAutoExact = true;
+  let orderDbPromise = null;
+  let orderSyncInFlight = null;
+
+  function pendingReservedQty(productId) {
+    return pendingOrders.reduce((sum, order) => sum + (order.order_items || [])
+      .filter(item => item.product_id === productId)
+      .reduce((part, item) => part + Number(item.quantity ?? item.qty ?? 0), 0), 0);
+  }
+
+  function availableStock(product) {
+    if (!product || product.track_inventory === false) return Number.MAX_SAFE_INTEGER;
+    return Math.max(0, Number(product.stock || 0) - pendingReservedQty(product.id));
+  }
 
   function isProductUnavailable(product) {
     if (!product || product.is_active === false || product.is_available === false) return true;
     if (product.track_inventory === false) return false;
-    return product.sold_out || product.stock <= 0;
+    return product.sold_out || availableStock(product) <= 0;
   }
 
   function promotionIsActive(promotion) {
@@ -85,6 +101,9 @@
     categoryTabs: document.querySelector("#categoryTabs"),
     productGrid: document.querySelector("#productGrid"),
     searchInput: document.querySelector("#searchInput"),
+    managementLink: document.querySelector("#managementLink"),
+    roleModeBadge: document.querySelector("#roleModeBadge"),
+    ownerReports: document.querySelector("#ownerReports"),
     sortModeBtn: document.querySelector("#sortModeBtn"),
     sortToolbar: document.querySelector("#sortToolbar"),
     cancelSortBtn: document.querySelector("#cancelSortBtn"),
@@ -119,6 +138,10 @@
     ordersBody: document.querySelector("#ordersBody"),
     syncBadge: document.querySelector("#syncBadge"),
     lowStockAlert: document.querySelector("#lowStockAlert"),
+    orderSyncAlert: document.querySelector("#orderSyncAlert"),
+    orderSyncTitle: document.querySelector("#orderSyncTitle"),
+    orderSyncDetail: document.querySelector("#orderSyncDetail"),
+    retryOrdersBtn: document.querySelector("#retryOrdersBtn"),
     shiftScreen: document.querySelector("#shiftScreen"),
     openShiftForm: document.querySelector("#openShiftForm"),
     shiftBusinessDate: document.querySelector("#shiftBusinessDate"),
@@ -149,6 +172,7 @@
     mixedTotalText: document.querySelector("#mixedTotalText"),
     complimentaryReasonRow: document.querySelector("#complimentaryReasonRow"),
     complimentaryReasonInput: document.querySelector("#complimentaryReasonInput"),
+    complimentaryPayBtn: document.querySelector("#complimentaryPayBtn"),
     orderNoteInput: document.querySelector("#orderNoteInput")
   };
 
@@ -210,6 +234,59 @@
     }
   }
 
+  function openOrderDb() {
+    if (orderDbPromise) return orderDbPromise;
+    orderDbPromise = new Promise((resolve, reject) => {
+      if (!window.indexedDB) {
+        reject(new Error("IndexedDB unavailable"));
+        return;
+      }
+      const request = window.indexedDB.open(orderDbName, orderDbVersion);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        const store = db.objectStoreNames.contains(orderStoreName)
+          ? request.transaction.objectStore(orderStoreName)
+          : db.createObjectStore(orderStoreName, { keyPath: "client_order_id" });
+        if (!store.indexNames.contains("sync_status")) store.createIndex("sync_status", "sync_status", { unique: false });
+        if (!store.indexNames.contains("created_at")) store.createIndex("created_at", "created_at", { unique: false });
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error("无法打开本地订单数据库"));
+      request.onblocked = () => reject(new Error("本地订单数据库正在被其他页面占用"));
+    }).catch(error => {
+      orderDbPromise = null;
+      throw error;
+    });
+    return orderDbPromise;
+  }
+
+  async function putOrderRecord(order) {
+    const db = await openOrderDb();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(orderStoreName, "readwrite");
+      transaction.objectStore(orderStoreName).put(order);
+      transaction.oncomplete = () => resolve(true);
+      transaction.onerror = () => reject(transaction.error || new Error("本地订单保存失败"));
+      transaction.onabort = () => reject(transaction.error || new Error("本地订单保存被中止"));
+    });
+  }
+
+  async function getOrderRecords() {
+    const db = await openOrderDb();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(orderStoreName, "readonly");
+      const request = transaction.objectStore(orderStoreName).getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error || new Error("读取本地订单失败"));
+    });
+  }
+
+  async function updateOrderRecord(order, patch) {
+    const next = { ...order, ...patch, local_updated_at: new Date().toISOString() };
+    await putOrderRecord(next);
+    return next;
+  }
+
   function writeProductCache(items) {
     const compactProducts = (items || []).map(product => {
       const imagePath = String(product.image_path || product.image_url || "");
@@ -257,7 +334,7 @@
     return (rawCart || []).map(line => {
       const product = products.find(item => item.id === line.product_id);
       if (isProductUnavailable(product)) return null;
-      const qty = product.track_inventory === false ? Number(line.qty || 1) : Math.min(Number(line.qty || 1), product.stock);
+      const qty = product.track_inventory === false ? Number(line.qty || 1) : Math.min(Number(line.qty || 1), availableStock(product));
       if (qty <= 0) return null;
       const itemType = line.item_type || "sale";
       return {
@@ -301,16 +378,38 @@
     cartLoaded = true;
   }
 
-  function loadPendingOrders() {
+  async function loadPendingOrders() {
     const current = readJson(pendingOrdersKey, []);
     const previous = readJson(previousPendingOrdersKey, []);
     const legacy = readJson(legacyPendingOrdersKey, []);
-    pendingOrders = current.length ? current : previous.length ? previous : legacy;
-    if (!current.length && (previous.length || legacy.length)) savePendingOrders();
+    const legacyOrders = current.length ? current : previous.length ? previous : legacy;
+    try {
+      for (const order of legacyOrders) {
+        await putOrderRecord({
+          ...order,
+          sync_status: order.sync_status === "attention" ? "attention" : "pending",
+          attempt_count: Number(order.attempt_count || 0),
+          created_at: order.created_at || new Date().toISOString(),
+          local_updated_at: new Date().toISOString()
+        });
+      }
+      const records = await getOrderRecords();
+      pendingOrders = records
+        .filter(order => ["pending", "syncing", "attention"].includes(order.sync_status))
+        .map(order => order.sync_status === "syncing" ? { ...order, sync_status: "pending" } : order)
+        .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
+      if (legacyOrders.length) {
+        window.localStorage.removeItem(previousPendingOrdersKey);
+        window.localStorage.removeItem(legacyPendingOrdersKey);
+      }
+      savePendingOrders();
+    } catch (error) {
+      pendingOrders = legacyOrders;
+    }
   }
 
   function savePendingOrders() {
-    writeJson(pendingOrdersKey, pendingOrders);
+    return writeJson(pendingOrdersKey, pendingOrders);
   }
 
   function saveLastSyncedAt() {
@@ -335,13 +434,32 @@
     return pendingOrders.filter(order => order.day === activeDay);
   }
 
+  function renderOrderSyncAlert() {
+    if (!el.orderSyncAlert) return;
+    const attention = pendingOrders.filter(order => order.sync_status === "attention");
+    el.orderSyncAlert.hidden = pendingOrders.length === 0;
+    if (!pendingOrders.length) return;
+    if (attention.length) {
+      el.orderSyncAlert.classList.add("attention");
+      el.orderSyncTitle.textContent = `${attention.length} 单需要处理`;
+      el.orderSyncDetail.textContent = `${pendingOrders.length} 单尚未完成云端确认，订单仍安全保存在本机。`;
+    } else {
+      el.orderSyncAlert.classList.remove("attention");
+      el.orderSyncTitle.textContent = `${pendingOrders.length} 单等待同步`;
+      el.orderSyncDetail.textContent = window.navigator.onLine ? "正在等待 Supabase 确认，重复提交不会重复扣库存。" : "网络恢复后会自动同步。";
+    }
+    if (el.retryOrdersBtn) el.retryOrdersBtn.disabled = Boolean(orderSyncInFlight) || !window.navigator.onLine;
+  }
+
   function updateSyncStatus() {
+    renderOrderSyncAlert();
     if (!window.navigator.onLine) {
       POS.setSyncStatus(pendingOrders.length ? `离线 · ${pendingOrders.length} 单待同步` : "离线", "offline");
       return;
     }
     if (pendingOrders.length) {
-      POS.setSyncStatus(`${pendingOrders.length} 单待同步`, "pending");
+      const attention = pendingOrders.filter(order => order.sync_status === "attention").length;
+      POS.setSyncStatus(attention ? `${attention} 单需处理` : `${pendingOrders.length} 单待同步`, "pending");
       return;
     }
     if (menuUsingCache) {
@@ -421,6 +539,7 @@
       POS.showToast("当前离线，请检查网络");
       return;
     }
+    if (pendingOrders.length) await syncPendingOrders(false, true);
     POS.setSyncStatus("正在同步菜单", "pending");
     const synced = await loadProducts({ silent: true, attempts: 3 });
     if (synced) {
@@ -442,6 +561,13 @@
       ]);
       if (profileResult.error || shiftResult.error || promotionResult.error) throw new Error("P1 unavailable");
       const profile = profileResult.data && profileResult.data[0];
+      if (profile && profile.is_active === false) {
+        POS.showToast("此员工账号已停用");
+        await new Promise(resolve => window.setTimeout(resolve, 900));
+        await client.auth.signOut();
+        window.location.reload();
+        return;
+      }
       currentRole = profile && profile.is_active !== false ? profile.role : "viewer";
       currentShift = shiftResult.data && shiftResult.data[0] || null;
       promotions = (promotionResult.data || []).filter(promotionIsActive);
@@ -474,8 +600,29 @@
       el.shiftStatus.classList.toggle("open", Boolean(currentShift));
     }
     if (el.closeShiftBtn) el.closeShiftBtn.hidden = !currentShift;
+    const manager = POS.canManage(currentRole);
+    document.body.dataset.posRole = currentRole;
+    if (el.roleModeBadge) {
+      el.roleModeBadge.textContent = currentRole === "owner" ? "Owner 版" : currentRole === "manager" ? "管理版" : currentRole === "cashier" ? "员工版" : "只读版";
+      el.roleModeBadge.dataset.role = currentRole;
+    }
+    if (el.managementLink) {
+      if (manager) {
+        el.managementLink.href = "admin.html#home";
+        el.managementLink.textContent = currentRole === "owner" ? "Owner 后台" : "管理后台";
+      } else if (currentRole === "cashier") {
+        el.managementLink.href = "admin.html#stockManagement";
+        el.managementLink.textContent = "库存 / 报损";
+      } else {
+        el.managementLink.href = "admin.html#home";
+        el.managementLink.textContent = "查看报表";
+      }
+    }
+    if (el.ownerReports) el.ownerReports.hidden = p1Enabled && !manager;
+    if (el.complimentaryPayBtn) el.complimentaryPayBtn.hidden = p1Enabled && !manager;
+    if (p1Enabled && !manager && payMethod === "complimentary") payMethod = "cash";
     if (el.shiftStockNote) {
-      const low = products.filter(product => product.track_inventory !== false && product.is_active !== false && (product.sold_out || product.stock <= (product.low_stock_threshold || lowStockThreshold)));
+      const low = products.filter(product => product.track_inventory !== false && product.is_active !== false && (product.sold_out || availableStock(product) <= (product.low_stock_threshold || lowStockThreshold)));
       el.shiftStockNote.textContent = low.length ? `开班提醒：${low.length} 个商品低库存或售罄。` : "库存状态正常。";
     }
     const openButton = el.openShiftForm && el.openShiftForm.querySelector("button[type='submit']");
@@ -489,7 +636,7 @@
     }
     if (el.quickDiscount) el.quickDiscount.hidden = !canApplyDiscount();
     if (el.discountReasonRow) el.discountReasonRow.hidden = true;
-    if (el.sortModeBtn) el.sortModeBtn.hidden = !POS.canManage(currentRole);
+    if (el.sortModeBtn) el.sortModeBtn.hidden = !manager;
     renderPaymentControls();
   }
 
@@ -602,7 +749,7 @@
     try {
       let result = await client
         .from("orders")
-        .select("id, shift_id, day, time_text, payment_method, total, total_amount, discount_amount, final_amount, status, cashier, note, promotion_name_snapshot, complimentary_reason, order_items(product_id, name, product_name, category, subcategory, qty, quantity, price, unit_price, subtotal, item_type, gift_reason), payments(payment_method, amount, payment_status)")
+        .select("id, client_order_id, shift_id, day, time_text, payment_method, total, total_amount, discount_amount, final_amount, status, cashier, note, promotion_name_snapshot, complimentary_reason, order_items(product_id, name, product_name, category, subcategory, qty, quantity, price, unit_price, subtotal, item_type, gift_reason), payments(payment_method, amount, payment_status)")
         .eq("day", activeDay)
         .order("created_at", { ascending: false });
       if (result.error && /column|schema cache|relationship|select/i.test(result.error.message || "")) {
@@ -613,7 +760,13 @@
           .order("created_at", { ascending: false });
       }
       if (result.error) throw result.error;
-      orders = [...pendingForToday(), ...(result.data || [])];
+      const cloudOrders = result.data || [];
+      const cloudByClientId = new Map(cloudOrders.filter(order => order.client_order_id).map(order => [order.client_order_id, order]));
+      for (const pending of [...pendingOrders]) {
+        const confirmed = cloudByClientId.get(pending.client_order_id);
+        if (confirmed) await markOrderSynced(pending, confirmed.id);
+      }
+      orders = [...pendingForToday(), ...cloudOrders];
     } catch (error) {
       orders = pendingForToday();
     }
@@ -675,12 +828,12 @@
   }
 
   async function refresh(session) {
-    loadPendingOrders();
+    await loadPendingOrders();
+    await loadP1Context(session);
     if (window.navigator.onLine && pendingOrders.length) {
       await syncPendingOrders(true);
     }
     await loadProducts();
-    await loadP1Context(session);
     loadCartOnce();
     reconcilePromotion();
     await loadTodayOrders();
@@ -707,6 +860,10 @@
       discount_amount: totals.discount,
       final_amount: totals.total,
       status: "pending",
+      sync_status: "pending",
+      attempt_count: 0,
+      created_at: new Date().toISOString(),
+      local_updated_at: new Date().toISOString(),
       is_test: false,
       promotion_code: "",
       promotion_id: appliedPromotion && appliedPromotion.promotion_id,
@@ -812,45 +969,112 @@
     return result;
   }
 
-  function saveOrderForLater(order) {
-    pendingOrders.unshift(order);
+  function isBusinessOrderError(error) {
+    const message = String((error && error.message) || error || "");
+    return /insufficient stock|price changed|product unavailable|product not found|shift is not open|shift belongs|order date does not match|order total mismatch|invalid discount|promotion|manual discount|manual gift|complimentary|payment|required|not allowed/i.test(message);
+  }
+
+  async function persistPendingOrder(order, options = {}) {
+    const existingIndex = pendingOrders.findIndex(item => item.client_order_id === order.client_order_id);
+    const next = {
+      ...order,
+      sync_status: order.sync_status || "pending",
+      attempt_count: Number(order.attempt_count || 0),
+      created_at: order.created_at || new Date().toISOString(),
+      local_updated_at: new Date().toISOString()
+    };
+    let savedToDatabase = false;
+    try {
+      await putOrderRecord(next);
+      savedToDatabase = true;
+    } catch (error) {
+      // localStorage is only an emergency fallback for older/private Safari modes.
+    }
+    if (existingIndex >= 0) pendingOrders.splice(existingIndex, 1, next);
+    else pendingOrders.push(next);
+    const savedFallback = savePendingOrders();
+    if (!savedToDatabase && !savedFallback) {
+      if (existingIndex >= 0) pendingOrders.splice(existingIndex, 1, order);
+      else pendingOrders = pendingOrders.filter(item => item.client_order_id !== order.client_order_id);
+      return false;
+    }
+    if (options.addToOrders !== false && !orders.some(item => item.client_order_id === next.client_order_id)) orders.unshift(next);
+    updateSyncStatus();
+    return true;
+  }
+
+  async function markPendingOrder(order, syncStatus, error) {
+    const next = {
+      ...order,
+      sync_status: syncStatus,
+      status: "pending",
+      attempt_count: Number(order.attempt_count || 0) + (syncStatus === "syncing" ? 1 : 0),
+      last_error: String((error && error.message) || error || ""),
+      last_attempt_at: new Date().toISOString()
+    };
+    await persistPendingOrder(next, { addToOrders: false });
+    return next;
+  }
+
+  async function markOrderSynced(order, serverOrderId) {
+    const synced = {
+      ...order,
+      id: serverOrderId || order.id,
+      status: "paid",
+      sync_status: "synced",
+      server_order_id: serverOrderId || order.server_order_id || "",
+      synced_at: new Date().toISOString(),
+      last_error: ""
+    };
+    try {
+      await putOrderRecord(synced);
+    } catch (error) {
+      // A later idempotent retry is safe if this local acknowledgement cannot be stored.
+    }
+    pendingOrders = pendingOrders.filter(item => item.client_order_id !== order.client_order_id);
     savePendingOrders();
-    orders.unshift(order);
+    saveLastSyncedAt();
     updateSyncStatus();
   }
 
-  async function syncPendingOrders(silent) {
+  async function syncPendingOrders(silent, includeAttention = false) {
+    if (orderSyncInFlight) return orderSyncInFlight;
     if (!window.navigator.onLine || !pendingOrders.length) {
       updateSyncStatus();
       return;
     }
 
-    const remaining = [];
-    let synced = 0;
-    for (const order of pendingOrders) {
-      try {
-        const result = await submitOrder(order);
-        if (result.error) {
+    orderSyncInFlight = (async () => {
+      let synced = 0;
+      const queue = [...pendingOrders].filter(order => includeAttention || order.sync_status !== "attention");
+      for (const order of queue) {
+        try {
+          const syncing = await markPendingOrder(order, "syncing", "");
+          const result = await submitOrder(syncing);
+          if (result.error) {
+            recordRetrySync();
+            await markPendingOrder(syncing, isBusinessOrderError(result.error) ? "attention" : "pending", result.error);
+          } else {
+            await markOrderSynced(syncing, result.data);
+            synced += 1;
+          }
+        } catch (error) {
           recordRetrySync();
-          remaining.push(order);
-        } else {
-          synced += 1;
+          await markPendingOrder(order, "pending", error);
         }
-      } catch (error) {
-        recordRetrySync();
-        remaining.push(order);
       }
-    }
-
-    pendingOrders = remaining;
-    savePendingOrders();
-    if (synced) saveLastSyncedAt();
-    updateSyncStatus();
-    if (synced && !silent) POS.showToast(`已同步 ${synced} 单`);
+      updateSyncStatus();
+      if (synced && !silent) POS.showToast(`已安全同步 ${synced} 单`);
+      return synced;
+    })().finally(() => {
+      orderSyncInFlight = null;
+      updateSyncStatus();
+    });
+    return orderSyncInFlight;
   }
 
-  function retrySync(silent) {
-    return syncPendingOrders(silent);
+  function retrySync(silent, includeAttention = false) {
+    return syncPendingOrders(silent, includeAttention);
   }
 
   const productFlavorColors = {
@@ -890,9 +1114,10 @@
 
   function productCard(product, mode) {
     const isUnavailable = isProductUnavailable(product);
+    const stock = availableStock(product);
     const disabled = isUnavailable ? "disabled" : "";
-    const low = product.track_inventory !== false && (product.stock <= (product.low_stock_threshold || lowStockThreshold) || product.sold_out) ? "low" : "";
-    const stockText = product.track_inventory === false ? "无需库存" : isUnavailable ? "售罄" : `库存 ${product.stock}`;
+    const low = product.track_inventory !== false && (stock <= (product.low_stock_threshold || lowStockThreshold) || product.sold_out) ? "low" : "";
+    const stockText = product.track_inventory === false ? "无需库存" : isUnavailable ? "售罄" : `可售 ${stock}`;
     const image = product.image_path ? `<img class="product-image" src="${assetUrl(product.image_path)}" alt="${product.name}">` : "";
     const compact = mode === "compact";
     if (compact) {
@@ -1136,7 +1361,7 @@
     if (isProductUnavailable(product)) return null;
     const existing = cart.find(item => item.product_id === productId);
     if (existing) {
-      if (product.track_inventory !== false && existing.qty >= product.stock) {
+      if (product.track_inventory !== false && existing.qty >= availableStock(product)) {
         POS.showToast("已达到当前库存数量");
         return null;
       }
@@ -1309,7 +1534,7 @@
     candidates = candidates
       .filter(product => !cart.some(item => item.product_id === product.id))
       .filter(product => !isProductUnavailable(product))
-      .filter(product => product.track_inventory === false || product.stock > Number(product.low_stock_threshold || lowStockThreshold))
+      .filter(product => product.track_inventory === false || availableStock(product) > Number(product.low_stock_threshold || lowStockThreshold))
       .sort((a, b) => Number(selectedFlavors.has(a.flavor)) - Number(selectedFlavors.has(b.flavor))
         || a.selling_price - b.selling_price
         || Number(b.is_upsell_product || 0) - Number(a.is_upsell_product || 0)
@@ -1345,8 +1570,8 @@
       item.gift_reason = isGift ? "" : "manual_gift";
     }
     const product = products.find(productItem => productItem.id === item.product_id);
-    if (product && product.track_inventory !== false && item.qty > product.stock) {
-      item.qty = product.stock;
+    if (product && product.track_inventory !== false && item.qty > availableStock(product)) {
+      item.qty = availableStock(product);
       POS.showToast("已达到当前库存数量");
     }
     cart = cart.filter(line => line.qty > 0);
@@ -1444,47 +1669,48 @@
       return;
     }
     checkoutInFlight = true;
-    POS.setBusy(el.checkoutBtn, true, "提交中");
-    if (!window.navigator.onLine) {
-      if (p1Enabled && !order.shift_id) {
-        POS.setBusy(el.checkoutBtn, false);
-        checkoutInFlight = false;
-        POS.showToast("本机没有有效班次，暂时不能离线收银");
-        return;
-      }
-      saveOrderForLater(order);
-      resetCheckoutFields();
+    POS.setBusy(el.checkoutBtn, true, "正在安全保存");
+    const locallySaved = await persistPendingOrder(order);
+    if (!locallySaved) {
       POS.setBusy(el.checkoutBtn, false);
       checkoutInFlight = false;
-      renderAll();
-      POS.showToast("离线订单已保存");
+      POS.showToast("本地保存失败，请勿向顾客确认收款");
+      return;
+    }
+
+    // Once the durable local copy exists, clear the basket to prevent a second order id.
+    resetCheckoutFields();
+    renderAll();
+    POS.setBusy(el.checkoutBtn, true, window.navigator.onLine ? "正在云端确认" : "已安全保存");
+
+    if (!window.navigator.onLine) {
+      POS.setBusy(el.checkoutBtn, false);
+      checkoutInFlight = false;
+      POS.showToast("订单已安全保存在本机，联网后自动同步");
       return;
     }
 
     try {
       const result = await submitOrder(order);
       if (result.error) {
-        POS.setBusy(el.checkoutBtn, false);
-        checkoutInFlight = false;
-        POS.showToast(result.error.message || "订单提交失败");
-        await refresh();
-        return;
+        const status = isBusinessOrderError(result.error) ? "attention" : "pending";
+        await markPendingOrder(order, status, result.error);
+        POS.showToast(status === "attention" ? `订单已保留：${result.error.message || "需要处理"}` : "云端暂未确认，订单已安全保存在本机");
+      } else {
+        await markOrderSynced(order, result.data);
+        POS.showToast("已完成收款并同步");
       }
     } catch (error) {
-      saveOrderForLater(order);
-      resetCheckoutFields();
+      await markPendingOrder(order, "pending", error);
+      POS.showToast("网络响应中断，订单已安全保存在本机");
+    } finally {
       POS.setBusy(el.checkoutBtn, false);
       checkoutInFlight = false;
+      if (window.navigator.onLine) await loadProducts({ silent: true, attempts: 1 });
+      await loadTodayOrders();
       renderAll();
-      POS.showToast("订单已保存在本机");
-      return;
+      updateSyncStatus();
     }
-    POS.setBusy(el.checkoutBtn, false);
-    checkoutInFlight = false;
-
-    resetCheckoutFields();
-    POS.showToast("已完成收款");
-    await refresh();
   }
 
   function renderReports() {
@@ -1520,9 +1746,10 @@
     el.otherItemCount.textContent = categoryCounts.other;
     el.topItem.textContent = top ? formatOrderItemName({ name: top[0] }) : "暂无";
 
-    el.ordersBody.innerHTML = activeOrders.length ? activeOrders.map(order => {
+    const visibleOrders = orders.filter(order => POS.isRevenueOrder(order) || order.status === "pending");
+    el.ordersBody.innerHTML = visibleOrders.length ? visibleOrders.map(order => {
       const items = order.order_items.map(item => `${formatOrderItemName(item)} x${itemQty(item)}`).join("、");
-      const pending = order.status === "pending" ? " · 待同步" : "";
+      const pending = order.status === "pending" ? order.sync_status === "attention" ? " · 需处理" : " · 待同步" : "";
       return `
         <tr>
           <td>${order.time_text}</td>
@@ -1537,8 +1764,8 @@
   function renderLowStockAlert() {
     if (!el.lowStockAlert) return;
     const lowProducts = products
-      .filter(product => product.stock <= (product.low_stock_threshold || lowStockThreshold) || product.sold_out)
-      .sort((a, b) => a.stock - b.stock || productLabel(a).localeCompare(productLabel(b)));
+      .filter(product => availableStock(product) <= (product.low_stock_threshold || lowStockThreshold) || product.sold_out)
+      .sort((a, b) => availableStock(a) - availableStock(b) || productLabel(a).localeCompare(productLabel(b)));
 
     if (!lowProducts.length) {
       el.lowStockAlert.hidden = true;
@@ -1547,7 +1774,8 @@
     }
 
     const visible = lowProducts.slice(0, 5).map(product => {
-      const status = product.stock <= 0 || product.sold_out ? "售罄" : `剩 ${product.stock}`;
+      const stock = availableStock(product);
+      const status = stock <= 0 || product.sold_out ? "售罄" : `可售 ${stock}`;
       return `${productLabel(product)} ${status}`;
     }).join("、");
     const more = lowProducts.length > 5 ? `，另有 ${lowProducts.length - 5} 款` : "";
@@ -1707,6 +1935,13 @@
   });
   window.addEventListener("offline", updateSyncStatus);
   if (el.syncBadge) el.syncBadge.addEventListener("click", manualMenuSync);
+  if (el.retryOrdersBtn) el.retryOrdersBtn.addEventListener("click", () => {
+    retrySync(false, true).then(async () => {
+      await loadProducts({ silent: true, attempts: 1 });
+      await loadTodayOrders();
+      renderAll();
+    }).catch(error => POS.showToast(error.message || "订单同步失败"));
+  });
 
   POS.initAuth(client, refresh).catch(error => POS.showToast(error.message));
 })();

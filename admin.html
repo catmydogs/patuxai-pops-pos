@@ -11,7 +11,7 @@
   <title>Patuxai Pops 后台统计</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/app-icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260729-category-order-fix-r23">
+  <link rel="stylesheet" href="styles.css?v=20260802-reliable-offline-r25">
 </head>
 <body class="locked">
   <div class="install-hint" id="installHint" hidden>
@@ -39,8 +39,8 @@
         <img class="brand-logo" src="assets/brand/patuxai-pops-logo.png" alt="Patuxai Pops by SERA">
         <div>
           <span class="brand-eyebrow">OPERATIONS</span>
-          <h1>后台管理</h1>
-          <div class="subtle"><span id="rangeText">Patuxai Pops 销售数据</span> · <span id="signedInAs"></span> · <span class="sync-badge online" id="syncBadge">在线</span></div>
+          <h1 id="adminTitle">后台管理</h1>
+          <div class="subtle"><span id="rangeText">Patuxai Pops 销售数据</span> · <span id="signedInAs"></span> · <span class="role-mode-badge" id="adminRoleBadge">读取权限</span> · <span class="sync-badge online" id="syncBadge">在线</span></div>
         </div>
       </div>
       <div class="actions">
@@ -376,6 +376,7 @@
       <h3>数据质量提醒</h3>
       <div class="alert-list" id="dataQualityList"></div>
       <h3>账号权限</h3>
+      <p class="section-help">先在 Supabase Authentication → Users 创建员工登录账号。新账号会自动成为“员工”，Owner 可在这里调整角色或停用账号。</p>
       <div class="list" id="rolesList"></div>
       <h3>最近操作</h3>
       <div class="list" id="auditList"></div>
@@ -384,8 +385,8 @@
 
   <button class="back-top" id="backTop" type="button" aria-label="返回顶部">↑ 顶部</button>
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=20260729-category-order-fix-r23"></script>
-  <script src="common.js?v=20260729-category-order-fix-r23"></script>
-  <script src="admin.js?v=20260729-category-order-fix-r23"></script>
+  <script src="config.js?v=20260802-reliable-offline-r25"></script>
+  <script src="common.js?v=20260802-reliable-offline-r25"></script>
+  <script src="admin.js?v=20260802-reliable-offline-r25"></script>
 </body>
 </html>

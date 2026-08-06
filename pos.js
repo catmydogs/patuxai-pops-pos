@@ -549,22 +549,29 @@
           .select("*")
           .order("sort_order", { ascending: true });
         if (!result.error && Array.isArray(result.data) && result.data.length) {
-          products = normalizeVisibleProducts(result.data);
-          writeProductCache(products);
-          menuUsingCache = false;
-          menuSyncError = "";
-          window.clearTimeout(menuRetryTimer);
-          return true;
+          const visibleProducts = normalizeVisibleProducts(result.data);
+          if (visibleProducts.length) {
+            products = visibleProducts;
+            writeProductCache(products);
+            menuUsingCache = false;
+            menuSyncError = "";
+            window.clearTimeout(menuRetryTimer);
+            return true;
+          }
+          lastError = new Error("数据库商品均已停用、删除或属于已退役 SKU");
+        } else {
+          lastError = result.error || new Error("数据库没有返回产品数据");
         }
-
-        lastError = result.error || new Error("数据库没有返回产品数据");
         if (attempt + 1 < attempts) {
           await new Promise(resolve => window.setTimeout(resolve, 800 * (attempt + 1)));
         }
       }
 
       const cachedProducts = readJson(productsCacheKey, []);
-      products = normalizeVisibleProducts(cachedProducts.length ? cachedProducts : POS.productCatalog);
+      const cachedVisibleProducts = normalizeVisibleProducts(cachedProducts);
+      products = cachedVisibleProducts.length
+        ? cachedVisibleProducts
+        : normalizeVisibleProducts(POS.productCatalog);
       menuUsingCache = true;
       menuSyncError = String((lastError && lastError.message) || lastError || "网络连接失败");
       scheduleMenuRetry();

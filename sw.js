@@ -1,4 +1,4 @@
-const CACHE_NAME = "patuxai-pops-pos-20260806-nonblocking-sync-r28";
+const CACHE_NAME = "patuxai-pops-pos-20260806-menu-cache-r30";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -13,7 +13,11 @@ const APP_SHELL = [
   "./assets/icons/app-icon-180.png",
   "./assets/icons/app-icon-192.png",
   "./assets/icons/app-icon-512.png",
-  "./assets/shapes/shape-patuxai.png"
+  "./assets/shapes/shape-patuxai.png",
+  "./assets/products/patuxai-mango-passion.jpg",
+  "./assets/products/patuxai-strawberry-milk.jpg",
+  "./assets/products/patuxai-japanese-melon.jpg",
+  "./assets/products/patuxai-coconut-butterfly-pea.jpg"
 ];
 
 function cacheResponse(request, response) {

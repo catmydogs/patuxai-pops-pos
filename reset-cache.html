@@ -50,13 +50,12 @@
           const registrations = await navigator.serviceWorker.getRegistrations();
           await Promise.all(registrations.map(registration => registration.unregister()));
         }
-        // Remove only rebuildable menu caches. Login and pending offline orders stay intact.
-        localStorage.removeItem("patuxai-pops-products-cache");
+        // Keep the last complete menu so the POS remains usable when Supabase is slow.
         localStorage.removeItem("patuxai-pops-promotions-cache");
       } catch (error) {
         // Continue to the app even if the browser blocks one cleanup step.
       }
-      window.location.replace(`./?v=20260806-nonblocking-sync-r28&refresh=${Date.now()}`);
+      window.location.replace(`./?v=20260806-menu-cache-r30&refresh=${Date.now()}`);
     })();
   </script>
 </body>

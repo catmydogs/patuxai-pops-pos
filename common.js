@@ -1,12 +1,17 @@
 (function () {
-  const appVersion = "20260806-nonblocking-sync-r28";
+  const appVersion = "20260806-menu-cache-r30";
   const productCatalog = [
-    { id: "patuxai-mango-passion", name: "Patuxai - Mango & Passion Fruit", category: "Patuxai Pops", shape: "Patuxai", flavor: "Mango & Passion Fruit", shape_order: 1, flavor_order: 1, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/shapes/shape-patuxai.png", note: "芒果百香果", sort_order: 1 },
-    { id: "patuxai-strawberry-milk", name: "Patuxai - Strawberry Milk", category: "Patuxai Pops", shape: "Patuxai", flavor: "Strawberry Milk", shape_order: 1, flavor_order: 2, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/shapes/shape-patuxai.png", note: "草莓牛奶", sort_order: 2 },
-    { id: "patuxai-japanese-melon", name: "Patuxai - Japanese Melon", category: "Patuxai Pops", shape: "Patuxai", flavor: "Japanese Melon", shape_order: 1, flavor_order: 3, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/shapes/shape-patuxai.png", note: "日本蜜瓜", sort_order: 3 },
-    { id: "patuxai-coconut-butterfly-pea", name: "Patuxai - Coconut + Butterfly Pea", category: "Patuxai Pops", shape: "Patuxai", flavor: "Coconut + Butterfly Pea", shape_order: 1, flavor_order: 4, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/shapes/shape-patuxai.png", note: "椰子蝶豆花", sort_order: 4 }
+    { id: "patuxai-mango-passion", name: "Patuxai - Mango & Passion Fruit", category: "Patuxai Pops", shape: "Patuxai", flavor: "Mango & Passion Fruit", shape_order: 1, flavor_order: 1, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/products/patuxai-mango-passion.jpg", note: "芒果百香果", sort_order: 1 },
+    { id: "patuxai-strawberry-milk", name: "Patuxai - Strawberry Milk", category: "Patuxai Pops", shape: "Patuxai", flavor: "Strawberry Milk", shape_order: 1, flavor_order: 2, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/products/patuxai-strawberry-milk.jpg", note: "草莓牛奶", sort_order: 2 },
+    { id: "patuxai-japanese-melon", name: "Patuxai - Japanese Melon", category: "Patuxai Pops", shape: "Patuxai", flavor: "Japanese Melon", shape_order: 1, flavor_order: 3, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/products/patuxai-japanese-melon.jpg", note: "日本蜜瓜", sort_order: 3 },
+    { id: "patuxai-coconut-butterfly-pea", name: "Patuxai - Coconut + Butterfly Pea", category: "Patuxai Pops", shape: "Patuxai", flavor: "Coconut + Butterfly Pea", shape_order: 1, flavor_order: 4, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/products/patuxai-coconut-butterfly-pea.jpg", note: "椰子蝶豆花", sort_order: 4 },
+    { id: "icecream-patuxai-blueberry-ms45l66m", name: "Patuxai - Blueberry", category: "icecream", shape: "Patuxai", flavor: "Blueberry", shape_order: 1, flavor_order: 5, price: 55000, stock: 0, sold_out: true, is_active: true, note: "蓝莓", sort_order: 5 }
   ];
   const retiredProductIds = [
+    "mango-passion",
+    "strawberry-milk",
+    "pistachio",
+    "coconut-butterfly-pea",
     "i-love-laos-mango-passion",
     "i-love-laos-strawberry-milk",
     "i-love-laos-japanese-melon",
@@ -22,7 +27,11 @@
     "lychee-rose-soda",
     "patuxai-sunset-soda",
     "peach-jasmine-sparkle",
-    "grapefruit-sparkle"
+    "grapefruit-sparkle",
+    "custom-pops-service",
+    "custom-event-deposit",
+    "merch-sticker",
+    "merch-tote-bag"
   ];
 
   function createRestClient(config) {
@@ -33,7 +42,6 @@
       try {
         window.localStorage.setItem(sessionKey, value);
       } catch (error) {
-        window.localStorage.removeItem("patuxai-pops-products-cache");
         window.localStorage.removeItem("patuxai-pops-promotions-cache");
         try {
           window.localStorage.setItem(sessionKey, value);

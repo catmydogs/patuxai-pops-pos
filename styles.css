@@ -956,7 +956,8 @@ h1 {
   aspect-ratio: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
-  object-fit: cover;
+  object-fit: contain;
+  background: #fffaf3;
 }
 
 .product-image-placeholder {

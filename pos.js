@@ -1165,6 +1165,12 @@
     "Japanese Melon": { tone: "#6d9f4a", soft: "#e7f4d7", ink: "#31551f" },
     "Coconut + Butterfly Pea": { tone: "#4d82b8", soft: "#deefff", ink: "#214b75" }
   };
+  const productImagePaths = {
+    "patuxai-mango-passion": "assets/products/patuxai-mango-passion.jpg",
+    "patuxai-strawberry-milk": "assets/products/patuxai-strawberry-milk.jpg",
+    "patuxai-japanese-melon": "assets/products/patuxai-japanese-melon.jpg",
+    "patuxai-coconut-butterfly-pea": "assets/products/patuxai-coconut-butterfly-pea.jpg"
+  };
 
   function assetUrl(path) {
     if (window.POS_IMAGE_FALLBACKS && window.POS_IMAGE_FALLBACKS[path]) return window.POS_IMAGE_FALLBACKS[path];
@@ -1177,6 +1183,20 @@
     const colors = productFlavorColors[flavorName];
     if (!colors) return "";
     return `style="--product-tone: ${colors.tone}; --product-tone-soft: ${colors.soft}; --product-tone-ink: ${colors.ink};"`;
+  }
+
+  function productImagePath(product) {
+    const configured = String(product && (product.image_url || product.image_path) || "");
+    const skuImage = product && productImagePaths[product.id];
+    if (skuImage && (!configured || configured === "assets/shapes/shape-patuxai.png")) return skuImage;
+    return configured || skuImage || "";
+  }
+
+  function productCardLabel(product) {
+    if (POS.normalizeCategory(product && product.category) === "icecream") {
+      return product.note || product.flavor || product.short_name || product.name;
+    }
+    return productLabel(product);
   }
 
   function formatOrderItemName(item) {
@@ -1200,14 +1220,15 @@
     const disabled = isUnavailable ? "disabled" : "";
     const low = product.track_inventory !== false && (stock <= (product.low_stock_threshold || lowStockThreshold) || product.sold_out) ? "low" : "";
     const stockText = product.track_inventory === false ? "无需库存" : isUnavailable ? "售罄" : `可售 ${stock}`;
-    const image = product.image_path ? `<img class="product-image" src="${assetUrl(product.image_path)}" alt="${product.name}">` : "";
+    const imagePath = productImagePath(product);
+    const image = imagePath ? `<img class="product-image" src="${assetUrl(imagePath)}" alt="${product.name}">` : "";
     const compact = mode === "compact";
     if (compact) {
       return `
         <article class="product product-compact ${low}" ${productToneStyle(product.flavor)}>
           ${image || `<div class="product-image product-image-placeholder">${POS.categoryLabel(product.category).slice(0, 2)}</div>`}
           <div class="product-body">
-            <h2>${productLabel(product)}</h2>
+            <h2>${productCardLabel(product)}</h2>
             <div class="meta"><span>${POS.categoryLabel(product.category)}</span><span>${stockText}</span></div>
             <div class="price">${POS.money(product.selling_price)}</div>
           </div>

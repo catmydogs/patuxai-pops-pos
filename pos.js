@@ -8,7 +8,7 @@
   const lastSyncedAtKey = "patuxai-pops-last_synced_at";
   const retrySyncKey = "patuxai-pops-retry_sync_count";
   const orderDbName = "patuxai-pops-pos";
-  const orderDbVersion = 1;
+  const orderDbVersion = 2;
   const orderStoreName = "orders";
   const cartCacheKey = `patuxai-pops-cart-${todayKey}`;
   const p1EnabledKey = "patuxai-pops-p1-enabled";
@@ -44,6 +44,7 @@
   let cashAutoExact = true;
   let orderDbPromise = null;
   let orderSyncInFlight = null;
+  let orderRetryTimer = null;
 
   function pendingReservedQty(productId) {
     return pendingOrders.reduce((sum, order) => sum + (order.order_items || [])
@@ -173,7 +174,8 @@
     complimentaryReasonRow: document.querySelector("#complimentaryReasonRow"),
     complimentaryReasonInput: document.querySelector("#complimentaryReasonInput"),
     complimentaryPayBtn: document.querySelector("#complimentaryPayBtn"),
-    orderNoteInput: document.querySelector("#orderNoteInput")
+    orderNoteInput: document.querySelector("#orderNoteInput"),
+    checkoutStatus: document.querySelector("#checkoutStatus")
   };
 
   function canApplyDiscount() {
@@ -249,6 +251,7 @@
           : db.createObjectStore(orderStoreName, { keyPath: "client_order_id" });
         if (!store.indexNames.contains("sync_status")) store.createIndex("sync_status", "sync_status", { unique: false });
         if (!store.indexNames.contains("created_at")) store.createIndex("created_at", "created_at", { unique: false });
+        if (!store.indexNames.contains("next_retry_at")) store.createIndex("next_retry_at", "next_retry_at", { unique: false });
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error || new Error("无法打开本地订单数据库"));
@@ -285,6 +288,17 @@
     const next = { ...order, ...patch, local_updated_at: new Date().toISOString() };
     await putOrderRecord(next);
     return next;
+  }
+
+  async function deleteOrderRecord(clientOrderId) {
+    const db = await openOrderDb();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(orderStoreName, "readwrite");
+      transaction.objectStore(orderStoreName).delete(clientOrderId);
+      transaction.oncomplete = () => resolve(true);
+      transaction.onerror = () => reject(transaction.error || new Error("清理本地订单失败"));
+      transaction.onabort = () => reject(transaction.error || new Error("清理本地订单被中止"));
+    });
   }
 
   function writeProductCache(items) {
@@ -429,6 +443,31 @@
     safeSetStorage(retrySyncKey, String(count));
   }
 
+  function retryDelayMs(attemptCount) {
+    const exponent = Math.min(6, Math.max(0, Number(attemptCount || 0) - 1));
+    return Math.min(5 * 60 * 1000, 5000 * (2 ** exponent));
+  }
+
+  function scheduleOrderRetry(delayOverride) {
+    window.clearTimeout(orderRetryTimer);
+    orderRetryTimer = null;
+    if (!window.navigator.onLine || orderSyncInFlight) return;
+    const retryable = pendingOrders.filter(order => order.sync_status !== "attention");
+    if (!retryable.length) return;
+    const now = Date.now();
+    const earliest = retryable.reduce((time, order) => {
+      const next = new Date(order.next_retry_at || 0).getTime();
+      return Math.min(time, Number.isFinite(next) ? next : now);
+    }, Number.POSITIVE_INFINITY);
+    const delay = Number.isFinite(delayOverride)
+      ? Math.max(0, delayOverride)
+      : Math.max(0, Math.min(5 * 60 * 1000, earliest - now));
+    orderRetryTimer = window.setTimeout(() => {
+      orderRetryTimer = null;
+      syncPendingOrders(true).catch(() => scheduleOrderRetry());
+    }, delay);
+  }
+
   function pendingForToday() {
     const activeDay = currentShift && currentShift.business_date ? currentShift.business_date : POS.todayKey();
     return pendingOrders.filter(order => order.day === activeDay);
@@ -449,6 +488,12 @@
       el.orderSyncDetail.textContent = window.navigator.onLine ? "正在等待 Supabase 确认，重复提交不会重复扣库存。" : "网络恢复后会自动同步。";
     }
     if (el.retryOrdersBtn) el.retryOrdersBtn.disabled = Boolean(orderSyncInFlight) || !window.navigator.onLine;
+    if (el.checkoutStatus) {
+      el.checkoutStatus.textContent = attention.length
+        ? `${attention.length} 单需要处理`
+        : `${pendingOrders.length} 单等待云端确认`;
+      el.checkoutStatus.classList.toggle("attention", Boolean(attention.length));
+    }
   }
 
   function updateSyncStatus() {
@@ -460,6 +505,7 @@
     if (pendingOrders.length) {
       const attention = pendingOrders.filter(order => order.sync_status === "attention").length;
       POS.setSyncStatus(attention ? `${attention} 单需处理` : `${pendingOrders.length} 单待同步`, "pending");
+      scheduleOrderRetry();
       return;
     }
     if (menuUsingCache) {
@@ -1004,13 +1050,17 @@
   }
 
   async function markPendingOrder(order, syncStatus, error) {
+    const attemptCount = Number(order.attempt_count || 0) + (syncStatus === "syncing" ? 1 : 0);
     const next = {
       ...order,
       sync_status: syncStatus,
       status: "pending",
-      attempt_count: Number(order.attempt_count || 0) + (syncStatus === "syncing" ? 1 : 0),
+      attempt_count: attemptCount,
       last_error: String((error && error.message) || error || ""),
-      last_attempt_at: new Date().toISOString()
+      last_attempt_at: new Date().toISOString(),
+      next_retry_at: syncStatus === "pending"
+        ? new Date(Date.now() + retryDelayMs(attemptCount)).toISOString()
+        : null
     };
     await persistPendingOrder(next, { addToOrders: false });
     return next;
@@ -1028,6 +1078,7 @@
     };
     try {
       await putOrderRecord(synced);
+      await deleteOrderRecord(order.client_order_id);
     } catch (error) {
       // A later idempotent retry is safe if this local acknowledgement cannot be stored.
     }
@@ -1046,10 +1097,17 @@
 
     orderSyncInFlight = (async () => {
       let synced = 0;
-      const queue = [...pendingOrders].filter(order => includeAttention || order.sync_status !== "attention");
+      const now = Date.now();
+      const queue = [...pendingOrders].filter(order => {
+        if (includeAttention) return true;
+        if (order.sync_status === "attention") return false;
+        const nextRetryAt = new Date(order.next_retry_at || 0).getTime();
+        return !Number.isFinite(nextRetryAt) || nextRetryAt <= now;
+      });
       for (const order of queue) {
+        let syncing = order;
         try {
-          const syncing = await markPendingOrder(order, "syncing", "");
+          syncing = await markPendingOrder(order, "syncing", "");
           const result = await submitOrder(syncing);
           if (result.error) {
             recordRetrySync();
@@ -1060,7 +1118,7 @@
           }
         } catch (error) {
           recordRetrySync();
-          await markPendingOrder(order, "pending", error);
+          await markPendingOrder(syncing, "pending", error);
         }
       }
       updateSyncStatus();
@@ -1069,6 +1127,7 @@
     })().finally(() => {
       orderSyncInFlight = null;
       updateSyncStatus();
+      scheduleOrderRetry();
     });
     return orderSyncInFlight;
   }
@@ -1481,6 +1540,14 @@
         : payMethod === "complimentary" || totals.total > 0;
     el.checkoutBtn.textContent = checkoutButtonLabel(totals.total);
     el.checkoutBtn.disabled = checkoutInFlight || cart.length === 0 || !paymentReady;
+    if (el.checkoutStatus && !pendingOrders.length) {
+      el.checkoutStatus.classList.remove("attention");
+      el.checkoutStatus.textContent = checkoutInFlight
+        ? "正在安全保存订单"
+        : cart.length
+          ? `${cart.reduce((sum, item) => sum + Number(item.qty || 0), 0)} 件商品 · 选择付款后完成收款`
+          : "选择商品开始点单";
+    }
   }
 
   async function recordUpsell(eventType, product, action) {
@@ -1931,9 +1998,17 @@
   });
 
   window.addEventListener("online", () => {
+    scheduleOrderRetry(0);
     retrySync(false).then(refresh).catch(error => POS.showToast(error.message));
   });
   window.addEventListener("offline", updateSyncStatus);
+  window.addEventListener("pagehide", () => {
+    saveCart();
+    savePendingOrders();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && window.navigator.onLine) scheduleOrderRetry(0);
+  });
   if (el.syncBadge) el.syncBadge.addEventListener("click", manualMenuSync);
   if (el.retryOrdersBtn) el.retryOrdersBtn.addEventListener("click", () => {
     retrySync(false, true).then(async () => {

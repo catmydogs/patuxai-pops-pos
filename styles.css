@@ -1060,14 +1060,14 @@ aside {
   position: relative;
   height: 100%;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
   background: #fff;
   border-left: 1px solid var(--line);
   padding: 18px;
   display: grid;
-  grid-template-rows: auto minmax(180px, 1fr) auto auto;
+  grid-template-rows: auto minmax(150px, 0.8fr) minmax(0, 1.35fr);
   box-shadow: var(--shadow);
 }
 
@@ -1100,7 +1100,7 @@ aside {
 .cart-list {
   overflow: auto;
   min-height: 180px;
-  max-height: 38vh;
+  max-height: none;
   padding: 14px 2px;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -1143,6 +1143,10 @@ aside {
 }
 
 .checkout {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
   border-top: 1px solid var(--line);
   padding: 14px 0 max(18px, env(safe-area-inset-bottom));
   background: #fff;
@@ -3855,13 +3859,45 @@ aside {
 }
 
 .quick-discount {
-  display: grid;
-  gap: 8px;
+  display: block;
   margin: 0 0 10px;
-  padding: 10px;
+  padding: 0;
   border: 1px solid rgba(210, 210, 215, 0.84);
   border-radius: 8px;
   background: #fbfbfd;
+}
+
+.quick-discount > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  color: var(--ink);
+  cursor: pointer;
+  list-style: none;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.quick-discount > summary::-webkit-details-marker {
+  display: none;
+}
+
+.quick-discount > summary span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.quick-discount[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.quick-discount-body {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
 }
 
 .quick-discount-head {
@@ -3902,11 +3938,32 @@ aside {
 }
 
 .checkout-button {
-  position: sticky;
-  bottom: max(0px, env(safe-area-inset-bottom));
-  z-index: 8;
   margin-top: 4px;
   box-shadow: 0 12px 26px rgba(32, 78, 48, 0.22);
+}
+
+.checkout-submit-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  display: grid;
+  gap: 7px;
+  margin: 10px -2px -2px;
+  padding: 10px 2px max(2px, env(safe-area-inset-bottom));
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(16px);
+}
+
+.checkout-status {
+  min-height: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 680;
+  text-align: center;
+}
+
+.checkout-status.attention {
+  color: var(--danger);
 }
 
 /* Keep the POS usable in iPad portrait: catalog and checkout scroll separately. */
@@ -3932,7 +3989,7 @@ aside {
     height: 100vh;
     height: 100dvh;
     min-height: 0;
-    overflow-y: auto;
+    overflow: hidden;
     border-top: 0;
     border-left: 1px solid var(--line);
     padding: 16px;
@@ -3957,7 +4014,7 @@ aside {
   }
 
   .app .extra-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .app .product-compact {
@@ -3965,7 +4022,14 @@ aside {
   }
 
   .app .cart-list {
-    max-height: 28vh;
+    max-height: none;
+  }
+
+  .app .checkout {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   .sort-toolbar {

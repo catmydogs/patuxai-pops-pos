@@ -592,9 +592,9 @@
       POS.showToast("当前离线，请检查网络");
       return;
     }
-    if (pendingOrders.length) await syncPendingOrders(false, true);
+    if (pendingOrders.length) scheduleOrderRetry(0);
     POS.setSyncStatus("正在同步菜单", "pending");
-    const synced = await loadProducts({ silent: true, attempts: 3 });
+    const synced = await loadProducts({ silent: true, attempts: 1 });
     if (synced) {
       renderAll();
       POS.showToast("菜单和真实库存已更新");
@@ -880,16 +880,32 @@
     return [{ payment_method: "other", amount: total, payment_status: "confirmed", reference_number: reference }];
   }
 
-  async function refresh(session) {
+  async function hydrateLocalShell(session) {
     await loadPendingOrders();
-    await loadP1Context(session);
-    if (window.navigator.onLine && pendingOrders.length) {
-      await syncPendingOrders(true);
-    }
-    await loadProducts();
+    currentSession = session || currentSession;
+    const cachedProducts = normalizeVisibleProducts(readJson(productsCacheKey, []));
+    products = cachedProducts.length ? cachedProducts : normalizeVisibleProducts(POS.productCatalog);
+    currentRole = window.localStorage.getItem(currentRoleKey) || "cashier";
+    const cachedShift = readJson(currentShiftKey, null);
+    currentShift = cachedShift && cachedShift.status === "open" && cachedShift.business_date === POS.todayKey() ? cachedShift : null;
+    promotions = readJson(promotionsCacheKey, []).filter(promotionIsActive);
+    p1Enabled = window.localStorage.getItem(p1EnabledKey) === "true";
     loadCartOnce();
     reconcilePromotion();
-    await loadTodayOrders();
+    orders = pendingForToday();
+    renderAll();
+    updateSyncStatus();
+  }
+
+  async function refresh(session) {
+    await hydrateLocalShell(session);
+    await loadP1Context(session);
+    if (window.navigator.onLine && pendingOrders.length) scheduleOrderRetry(0);
+    await Promise.allSettled([
+      loadProducts({ silent: true, attempts: 1 }),
+      loadTodayOrders()
+    ]);
+    reconcilePromotion();
     renderAll();
     updateSyncStatus();
   }

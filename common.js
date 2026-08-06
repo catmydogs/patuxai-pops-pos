@@ -1,5 +1,5 @@
 (function () {
-  const appVersion = "20260806-menu-recovery-r27";
+  const appVersion = "20260806-nonblocking-sync-r28";
   const productCatalog = [
     { id: "patuxai-mango-passion", name: "Patuxai - Mango & Passion Fruit", category: "Patuxai Pops", shape: "Patuxai", flavor: "Mango & Passion Fruit", shape_order: 1, flavor_order: 1, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/shapes/shape-patuxai.png", note: "芒果百香果", sort_order: 1 },
     { id: "patuxai-strawberry-milk", name: "Patuxai - Strawberry Milk", category: "Patuxai Pops", shape: "Patuxai", flavor: "Strawberry Milk", shape_order: 1, flavor_order: 2, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/shapes/shape-patuxai.png", note: "草莓牛奶", sort_order: 2 },
@@ -27,7 +27,7 @@
 
   function createRestClient(config) {
     const sessionKey = "patuxai-pops-session";
-    const requestTimeoutMs = 30000;
+    const requestTimeoutMs = 15000;
 
     function storeSession(value) {
       try {

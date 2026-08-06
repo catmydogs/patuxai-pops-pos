@@ -1,4 +1,4 @@
-const CACHE_NAME = "patuxai-pops-pos-20260806-menu-recovery-r27";
+const CACHE_NAME = "patuxai-pops-pos-20260806-nonblocking-sync-r28";
 const APP_SHELL = [
   "./",
   "./index.html",

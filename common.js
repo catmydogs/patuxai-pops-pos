@@ -1,5 +1,17 @@
 (function () {
-  const appVersion = "20260806-menu-cache-r30";
+  const appVersion = "20260812-ipad-network-r33";
+  let databaseReachable = null;
+
+  function markDatabaseReachable(reachable) {
+    const next = Boolean(reachable);
+    if (databaseReachable === next) return;
+    databaseReachable = next;
+    window.dispatchEvent(new CustomEvent("posnetworkchange", { detail: { reachable: next } }));
+  }
+
+  function isOnline() {
+    return databaseReachable === true || (databaseReachable === null && window.navigator.onLine !== false);
+  }
   const productCatalog = [
     { id: "patuxai-mango-passion", name: "Patuxai - Mango & Passion Fruit", category: "Patuxai Pops", shape: "Patuxai", flavor: "Mango & Passion Fruit", shape_order: 1, flavor_order: 1, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/products/patuxai-mango-passion.jpg", note: "芒果百香果", sort_order: 1 },
     { id: "patuxai-strawberry-milk", name: "Patuxai - Strawberry Milk", category: "Patuxai Pops", shape: "Patuxai", flavor: "Strawberry Milk", shape_order: 1, flavor_order: 2, price: 55000, stock: 0, sold_out: true, is_active: true, image_path: "assets/products/patuxai-strawberry-milk.jpg", note: "草莓牛奶", sort_order: 2 },
@@ -37,6 +49,7 @@
   function createRestClient(config) {
     const sessionKey = "patuxai-pops-session";
     const requestTimeoutMs = 15000;
+    const authRequestTimeoutMs = 45000;
 
     function storeSession(value) {
       try {
@@ -51,16 +64,19 @@
       }
     }
 
-    async function fetchWithTimeout(url, options) {
+    async function fetchWithTimeout(url, options, timeoutMs) {
       const supportsAbort = typeof AbortController !== "undefined";
       const controller = supportsAbort ? new AbortController() : null;
-      const timer = controller ? window.setTimeout(() => controller.abort(), requestTimeoutMs) : null;
+      const timer = controller ? window.setTimeout(() => controller.abort(), timeoutMs || requestTimeoutMs) : null;
       try {
-        return await window.fetch(url, {
+        const response = await window.fetch(url, {
           ...(options || {}),
           ...(controller ? { signal: controller.signal } : {})
         });
+        markDatabaseReachable(true);
+        return response;
       } catch (error) {
+        markDatabaseReachable(false);
         if (error && error.name === "AbortError") {
           throw new Error("数据库响应超时，请稍后重试");
         }
@@ -68,6 +84,19 @@
       } finally {
         if (timer) window.clearTimeout(timer);
       }
+    }
+
+    async function fetchAuthWithRetry(url, options) {
+      let lastError;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          return await fetchWithTimeout(url, options, authRequestTimeoutMs);
+        } catch (error) {
+          lastError = error;
+          if (attempt === 0) await new Promise(resolve => window.setTimeout(resolve, 1200));
+        }
+      }
+      throw lastError;
     }
 
     function friendlyNetworkError(error) {
@@ -131,7 +160,7 @@
     async function refreshSession(session) {
       if (!session || !session.refresh_token) return null;
       try {
-        const response = await fetchWithTimeout(`${config.SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+        const response = await fetchAuthWithRetry(`${config.SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
           method: "POST",
           headers: {
             apikey: config.SUPABASE_ANON_KEY,
@@ -139,10 +168,10 @@
           },
           body: JSON.stringify({ refresh_token: session.refresh_token })
         });
-        if (!response.ok) return window.navigator.onLine ? null : session;
+        if (!response.ok) return isOnline() ? null : session;
         return saveSession(await response.json());
       } catch (error) {
-        return window.navigator.onLine ? null : session;
+        return isOnline() ? null : session;
       }
     }
 
@@ -310,7 +339,7 @@
           if (!session) return { data: { session: null }, error: null };
           if (sessionNeedsRefresh(session)) {
             const refreshed = await refreshSession(session);
-            if (!refreshed && window.navigator.onLine) clearSession();
+            if (!refreshed && isOnline()) clearSession();
             return { data: { session: refreshed }, error: null };
           }
           return { data: { session }, error: null };
@@ -318,7 +347,7 @@
         async signInWithPassword(credentials) {
           let response;
           try {
-            response = await fetchWithTimeout(`${config.SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+            response = await fetchAuthWithRetry(`${config.SUPABASE_URL}/auth/v1/token?grant_type=password`, {
               method: "POST",
               headers: {
                 apikey: config.SUPABASE_ANON_KEY,
@@ -518,7 +547,7 @@
     if (!badge) return;
     badge.textContent = message;
     badge.classList.remove("online", "offline", "pending");
-    badge.classList.add(state || (window.navigator.onLine ? "online" : "offline"));
+    badge.classList.add(state || (isOnline() ? "online" : "offline"));
   }
 
   function initPwa() {
@@ -554,10 +583,17 @@
     }
 
     const updateNetworkStatus = () => {
-      setSyncStatus(window.navigator.onLine ? "在线" : "离线", window.navigator.onLine ? "online" : "offline");
+      setSyncStatus(isOnline() ? "在线" : "离线", isOnline() ? "online" : "offline");
     };
-    window.addEventListener("online", updateNetworkStatus);
-    window.addEventListener("offline", updateNetworkStatus);
+    window.addEventListener("online", () => {
+      databaseReachable = null;
+      updateNetworkStatus();
+    });
+    window.addEventListener("offline", () => {
+      markDatabaseReachable(false);
+      updateNetworkStatus();
+    });
+    window.addEventListener("posnetworkchange", updateNetworkStatus);
     updateNetworkStatus();
   }
 
@@ -609,14 +645,14 @@
         }
         showAuth(false);
         if (signedIn) signedIn.textContent = session.user.email || "";
-        setSyncStatus(window.navigator.onLine ? "在线 · 已就绪" : "离线", window.navigator.onLine ? "online" : "offline");
+        setSyncStatus(isOnline() ? "在线 · 已就绪" : "离线", isOnline() ? "online" : "offline");
         if (!ready || force) {
           ready = true;
           await onReady(session);
         }
         return true;
       } catch (error) {
-        if (window.navigator.onLine) POS.showToast(error.message || "登录检查失败");
+        if (isOnline()) POS.showToast(error.message || "登录检查失败");
         return false;
       } finally {
         checkingSession = false;
@@ -703,6 +739,7 @@
     csvEscape,
     showToast,
     setSyncStatus,
+    isOnline,
     setBusy,
     initAuth,
     initPwa

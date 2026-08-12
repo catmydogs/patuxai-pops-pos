@@ -1,9 +1,10 @@
-const CACHE_NAME = "patuxai-pops-pos-20260806-menu-cache-r30";
+const CACHE_NAME = "patuxai-pops-pos-20260812-ipad-network-r33";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./admin.html",
   "./styles.css",
+  "./i18n.js",
   "./config.js",
   "./common.js",
   "./pos.js",

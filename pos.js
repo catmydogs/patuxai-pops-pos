@@ -451,7 +451,7 @@
   function scheduleOrderRetry(delayOverride) {
     window.clearTimeout(orderRetryTimer);
     orderRetryTimer = null;
-    if (!window.navigator.onLine || orderSyncInFlight) return;
+    if (orderSyncInFlight) return;
     const retryable = pendingOrders.filter(order => order.sync_status !== "attention");
     if (!retryable.length) return;
     const now = Date.now();
@@ -485,9 +485,9 @@
     } else {
       el.orderSyncAlert.classList.remove("attention");
       el.orderSyncTitle.textContent = `${pendingOrders.length} 单等待同步`;
-      el.orderSyncDetail.textContent = window.navigator.onLine ? "正在等待 Supabase 确认，重复提交不会重复扣库存。" : "网络恢复后会自动同步。";
+      el.orderSyncDetail.textContent = POS.isOnline() ? "正在等待 Supabase 确认，重复提交不会重复扣库存。" : "网络恢复后会自动同步。";
     }
-    if (el.retryOrdersBtn) el.retryOrdersBtn.disabled = Boolean(orderSyncInFlight) || !window.navigator.onLine;
+    if (el.retryOrdersBtn) el.retryOrdersBtn.disabled = Boolean(orderSyncInFlight);
     if (el.checkoutStatus) {
       el.checkoutStatus.textContent = attention.length
         ? `${attention.length} 单需要处理`
@@ -498,7 +498,7 @@
 
   function updateSyncStatus() {
     renderOrderSyncAlert();
-    if (!window.navigator.onLine) {
+    if (!POS.isOnline()) {
       POS.setSyncStatus(pendingOrders.length ? `离线 · ${pendingOrders.length} 单待同步` : "离线", "offline");
       return;
     }
@@ -526,7 +526,6 @@
 
   function scheduleMenuRetry() {
     window.clearTimeout(menuRetryTimer);
-    if (!window.navigator.onLine) return;
     menuRetryTimer = window.setTimeout(async () => {
       const synced = await loadProducts({ silent: true, attempts: 1 });
       if (synced) {
@@ -588,10 +587,6 @@
   }
 
   async function manualMenuSync() {
-    if (!window.navigator.onLine) {
-      POS.showToast("当前离线，请检查网络");
-      return;
-    }
     if (pendingOrders.length) scheduleOrderRetry(0);
     POS.setSyncStatus("正在同步菜单", "pending");
     const synced = await loadProducts({ silent: true, attempts: 1 });
@@ -695,10 +690,6 @@
 
   async function openShift(event) {
     event.preventDefault();
-    if (!window.navigator.onLine) {
-      POS.showToast("开班需要连接数据库");
-      return;
-    }
     const button = el.openShiftForm.querySelector("button[type='submit']");
     POS.setBusy(button, true, "开班中");
     const result = await client.rpc("open_shift", {
@@ -764,7 +755,7 @@
   async function closeShift(event) {
     event.preventDefault();
     if (!currentShift) return;
-    if (!window.navigator.onLine || pendingOrders.length) {
+    if (pendingOrders.length) {
       POS.showToast("请先联网同步全部订单再交班");
       return;
     }
@@ -900,7 +891,7 @@
   async function refresh(session) {
     await hydrateLocalShell(session);
     await loadP1Context(session);
-    if (window.navigator.onLine && pendingOrders.length) scheduleOrderRetry(0);
+    if (pendingOrders.length) scheduleOrderRetry(0);
     await Promise.allSettled([
       loadProducts({ silent: true, attempts: 1 }),
       loadTodayOrders()
@@ -1113,7 +1104,7 @@
 
   async function syncPendingOrders(silent, includeAttention = false) {
     if (orderSyncInFlight) return orderSyncInFlight;
-    if (!window.navigator.onLine || !pendingOrders.length) {
+    if (!pendingOrders.length) {
       updateSyncStatus();
       return;
     }
@@ -1595,7 +1586,7 @@
   }
 
   async function recordUpsell(eventType, product, action) {
-    if (!p1Enabled || !currentShift || !window.navigator.onLine || !product || !product.product_id) return;
+    if (!p1Enabled || !currentShift || !product || !product.product_id) return;
     const eventKey = `${eventType}:${product.id}`;
     const existing = activeUpsellEvents.get(eventKey);
     if (action === "shown" && existing && existing.productId === product.id) return;
@@ -1792,14 +1783,7 @@
     // Once the durable local copy exists, clear the basket to prevent a second order id.
     resetCheckoutFields();
     renderAll();
-    POS.setBusy(el.checkoutBtn, true, window.navigator.onLine ? "正在云端确认" : "已安全保存");
-
-    if (!window.navigator.onLine) {
-      POS.setBusy(el.checkoutBtn, false);
-      checkoutInFlight = false;
-      POS.showToast("订单已安全保存在本机，联网后自动同步");
-      return;
-    }
+    POS.setBusy(el.checkoutBtn, true, "正在云端确认");
 
     try {
       const result = await submitOrder(order);
@@ -1817,7 +1801,7 @@
     } finally {
       POS.setBusy(el.checkoutBtn, false);
       checkoutInFlight = false;
-      if (window.navigator.onLine) await loadProducts({ silent: true, attempts: 1 });
+      if (POS.isOnline()) await loadProducts({ silent: true, attempts: 1 });
       await loadTodayOrders();
       renderAll();
       updateSyncStatus();
@@ -2046,12 +2030,16 @@
     retrySync(false).then(refresh).catch(error => POS.showToast(error.message));
   });
   window.addEventListener("offline", updateSyncStatus);
+  window.addEventListener("posnetworkchange", () => {
+    updateSyncStatus();
+    if (POS.isOnline()) scheduleOrderRetry(0);
+  });
   window.addEventListener("pagehide", () => {
     saveCart();
     savePendingOrders();
   });
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && window.navigator.onLine) scheduleOrderRetry(0);
+    if (document.visibilityState === "visible") scheduleOrderRetry(0);
   });
   if (el.syncBadge) el.syncBadge.addEventListener("click", manualMenuSync);
   if (el.retryOrdersBtn) el.retryOrdersBtn.addEventListener("click", () => {

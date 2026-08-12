@@ -1682,11 +1682,6 @@
   }
 
   async function saveStock(productId, button) {
-    if (!window.navigator.onLine) {
-      POS.showToast("当前离线，库存需要联网保存");
-      return false;
-    }
-
     const row = document.querySelector(`[data-stock-row="${productId}"]`);
     const input = row && row.querySelector(`[data-stock-input="${productId}"]`);
     const soldOut = row && row.querySelector(`[data-stock-soldout="${productId}"]`);
@@ -1834,11 +1829,6 @@
   }
 
   async function saveProduct(form) {
-    if (!window.navigator.onLine) {
-      POS.showToast("当前离线，菜单需要联网保存");
-      return;
-    }
-
     const productId = form.dataset.productForm;
     const formData = new FormData(form);
     const payload = {
@@ -1926,11 +1916,6 @@
   }
 
   async function addProduct(form) {
-    if (!window.navigator.onLine) {
-      POS.showToast("当前离线，新增产品需要联网保存");
-      return;
-    }
-
     const formData = new FormData(form);
     const name = String(formData.get("name") || "").trim();
     const category = POS.normalizeCategory(formData.get("category"));

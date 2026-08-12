@@ -299,6 +299,12 @@ h1 {
   padding: 9px 11px;
 }
 
+.language-toggle {
+  min-width: 56px;
+  white-space: nowrap;
+  font-weight: 800;
+}
+
 .button.primary,
 .primary {
   background: var(--mint);

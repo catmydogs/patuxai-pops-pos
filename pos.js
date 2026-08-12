@@ -473,6 +473,28 @@
     return pendingOrders.filter(order => order.day === activeDay);
   }
 
+  function pendingErrorLabel(order) {
+    const message = String(order && order.last_error || "").trim();
+    if (!message) return "等待连接云端";
+    if (/shift is not open|shift belongs/i.test(message)) return "原班次已关闭或不属于当前账号";
+    if (/order date does not match/i.test(message)) return "订单日期与原班次日期不一致";
+    if (/insufficient stock/i.test(message)) return "云端库存不足";
+    if (/price changed|order total mismatch/i.test(message)) return "商品价格或订单金额已变化";
+    if (/product unavailable|product not found/i.test(message)) return "商品已下架或不存在";
+    if (/manual discount|invalid discount|promotion/i.test(message)) return "折扣或促销规则不符合当前设置";
+    if (/manual gift|complimentary|not allowed|permission/i.test(message)) return "当前账号没有赠送或操作权限";
+    if (/payment|required/i.test(message)) return "付款资料不完整";
+    if (/timeout|failed to fetch|network|load failed/i.test(message)) return "网络连接尚未成功";
+    return message.length > 90 ? `${message.slice(0, 90)}…` : message;
+  }
+
+  function pendingOrderSummary(order) {
+    const time = [order.day, order.time_text].filter(Boolean).join(" ");
+    const amount = POS.money(Number(order.final_amount ?? order.total ?? 0));
+    const attempts = Number(order.attempt_count || 0);
+    return `${time || "本地订单"} · ${amount} · 已尝试 ${attempts} 次 · ${pendingErrorLabel(order)}`;
+  }
+
   function renderOrderSyncAlert() {
     if (!el.orderSyncAlert) return;
     const attention = pendingOrders.filter(order => order.sync_status === "attention");
@@ -481,13 +503,22 @@
     if (attention.length) {
       el.orderSyncAlert.classList.add("attention");
       el.orderSyncTitle.textContent = `${attention.length} 单需要处理`;
-      el.orderSyncDetail.textContent = `${pendingOrders.length} 单尚未完成云端确认，订单仍安全保存在本机。`;
+      const summaries = attention.slice(0, 3).map(pendingOrderSummary).join("；");
+      const more = attention.length > 3 ? `；另有 ${attention.length - 3} 单` : "";
+      el.orderSyncDetail.textContent = `${summaries}${more}。订单仍安全保存在本机，请勿重复下单。`;
     } else {
       el.orderSyncAlert.classList.remove("attention");
       el.orderSyncTitle.textContent = `${pendingOrders.length} 单等待同步`;
-      el.orderSyncDetail.textContent = POS.isOnline() ? "正在等待 Supabase 确认，重复提交不会重复扣库存。" : "网络恢复后会自动同步。";
+      const oldest = pendingOrders[0];
+      const detail = oldest ? pendingOrderSummary(oldest) : "";
+      el.orderSyncDetail.textContent = POS.isOnline()
+        ? `${detail}。正在等待 Supabase 确认，重复提交不会重复扣库存。`
+        : `${detail}。网络恢复后会自动同步。`;
     }
-    if (el.retryOrdersBtn) el.retryOrdersBtn.disabled = Boolean(orderSyncInFlight);
+    if (el.retryOrdersBtn) {
+      el.retryOrdersBtn.disabled = Boolean(orderSyncInFlight);
+      el.retryOrdersBtn.textContent = orderSyncInFlight ? "正在检查" : `重新检查 ${pendingOrders.length} 单`;
+    }
     if (el.checkoutStatus) {
       el.checkoutStatus.textContent = attention.length
         ? `${attention.length} 单需要处理`
@@ -1136,7 +1167,10 @@
         }
       }
       updateSyncStatus();
-      if (synced && !silent) POS.showToast(`已安全同步 ${synced} 单`);
+      if (!silent) {
+        if (synced) POS.showToast(`已安全同步 ${synced} 单`);
+        else if (pendingOrders.length) POS.showToast(`仍未同步：${pendingErrorLabel(pendingOrders[0])}`);
+      }
       return synced;
     })().finally(() => {
       orderSyncInFlight = null;

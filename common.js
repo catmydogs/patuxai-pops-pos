@@ -1,5 +1,5 @@
 (function () {
-  const appVersion = "20260812-ipad-network-r33";
+  const appVersion = "20260812-sync-diagnostics-r34";
   let databaseReachable = null;
 
   function markDatabaseReachable(reachable) {

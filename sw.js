@@ -1,4 +1,4 @@
-const CACHE_NAME = "patuxai-pops-pos-20260812-ipad-network-r33";
+const CACHE_NAME = "patuxai-pops-pos-20260812-sync-diagnostics-r34";
 const APP_SHELL = [
   "./",
   "./index.html",

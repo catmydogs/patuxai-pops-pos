@@ -1,4 +1,4 @@
-const CACHE_NAME = "patuxai-pops-pos-20260812-sync-diagnostics-r34";
+const CACHE_NAME = "patuxai-pops-pos-20260812-closed-shift-recovery-r35";
 const APP_SHELL = [
   "./",
   "./index.html",

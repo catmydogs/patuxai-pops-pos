@@ -1,5 +1,5 @@
 (function () {
-  const appVersion = "20260812-sync-diagnostics-r34";
+  const appVersion = "20260812-closed-shift-recovery-r35";
   let databaseReachable = null;
 
   function markDatabaseReachable(reachable) {

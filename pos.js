@@ -984,7 +984,7 @@
   async function submitOrder(order) {
     if (p1Enabled) {
       if (!order.shift_id) return { data: null, error: { message: "当前没有开启班次" } };
-      const p1Result = await client.rpc("create_order_p1", {
+      const rpcPayload = {
         p_client_order_id: order.client_order_id,
         p_shift_id: order.shift_id,
         p_items: order.order_items.map(item => ({
@@ -1004,7 +1004,14 @@
         p_promotion_id: order.promotion_id || null,
         p_promotion_name: order.promotion_name || "",
         p_complimentary_reason: order.complimentary_reason || ""
-      });
+      };
+      let p1Result = await client.rpc("create_order_p1", rpcPayload);
+      if (p1Result.error && /shift is not open/i.test(p1Result.error.message || "")) {
+        const recoveryResult = await client.rpc("recover_closed_shift_order_p1", rpcPayload);
+        if (!recoveryResult.error || !/function|schema cache|could not find/i.test(recoveryResult.error.message || "")) {
+          p1Result = recoveryResult;
+        }
+      }
       if (p1Result.error) {
         client.from("error_logs").insert({
           error_id: makeId(),

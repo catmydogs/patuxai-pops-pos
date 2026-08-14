@@ -37,6 +37,7 @@
   let auditLogs = [];
   let currentSession = null;
   let currentRole = "viewer";
+  let accessResolved = false;
   let p1Enabled = false;
   let activeHourMetric = "amount";
 
@@ -170,6 +171,22 @@
     return adminViewByHash[key] || key || "home";
   }
 
+  function allowedAdminViews() {
+    if (!accessResolved) return new Set();
+    if (currentRole === "cashier") return new Set(["stock"]);
+    if (currentRole === "viewer") return new Set(["home", "analytics", "inventory", "orders", "business", "shifts"]);
+    if (POS.canManage(currentRole)) return new Set(Object.values(adminViewByHash).filter(view => view !== "closeout"));
+    return new Set();
+  }
+
+  function authorizedAdminView(view) {
+    const requested = adminViewByHash[view] || view || "home";
+    if (!accessResolved) return requested;
+    const allowed = allowedAdminViews();
+    if (allowed.has(requested)) return requested;
+    return currentRole === "cashier" ? "stock" : "home";
+  }
+
   function updateAdminStickyOffset() {
     if (!el.adminTopbar) return;
     const height = Math.ceil(el.adminTopbar.getBoundingClientRect().height);
@@ -194,7 +211,11 @@
   }
 
   function setAdminView(view, options = {}) {
-    const activeView = adminViewByHash[view] || view || "home";
+    const activeView = authorizedAdminView(view);
+    const expectedHash = activeView === "stock" ? "#stockManagement" : `#${activeView}`;
+    if (accessResolved && window.location.hash !== expectedHash) {
+      window.history.replaceState(null, "", expectedHash);
+    }
     document.querySelectorAll("[data-admin-view]").forEach(section => {
       section.hidden = section.dataset.adminView !== activeView;
     });
@@ -330,6 +351,36 @@
   async function loadAll() {
     const issues = [];
 
+    accessResolved = false;
+    p1Enabled = false;
+    currentRole = "viewer";
+    userProfiles = [];
+
+    try {
+      if (!currentSession || !currentSession.user) throw new Error("Missing session");
+      const ownProfileResult = await client
+        .from("user_profiles")
+        .select("user_id, email, display_name, role, is_active")
+        .eq("user_id", currentSession.user.id);
+      if (ownProfileResult.error) throw ownProfileResult.error;
+      const ownProfile = ownProfileResult.data && ownProfileResult.data[0];
+      if (!ownProfile) throw new Error("Missing POS profile");
+      if (ownProfile.is_active === false) {
+        POS.showToast("此员工账号已停用");
+        await new Promise(resolve => window.setTimeout(resolve, 900));
+        await client.auth.signOut();
+        window.location.reload();
+        return;
+      }
+      currentRole = ownProfile.role || "viewer";
+      userProfiles = [ownProfile];
+      accessResolved = true;
+      p1Enabled = true;
+      document.body.dataset.posRole = currentRole;
+    } catch (error) {
+      issues.push("权限");
+    }
+
     try {
       const productsResult = await client
         .from("products")
@@ -342,75 +393,76 @@
       issues.push("菜单");
     }
 
-    try {
-      let ordersResult = await fetchPagedRows(
-        "orders",
-        "id, shift_id, day, time_text, payment_method, total, total_amount, discount_amount, final_amount, status, cashier, note, created_at, is_test, promotion_id, promotion_code, promotion_note, promotion_name_snapshot, complimentary_reason, cancel_reason, cancelled_at, refund_amount, order_items(product_id, product_uid, name, product_name, category, product_type, subcategory, qty, quantity, price, unit_price, subtotal, item_type, promotion_code, gift_reason), payments(payment_id, payment_method, amount, payment_status, reference_number)",
-        "created_at"
-      );
-      if (ordersResult.error && /column|schema cache|relationship|select/i.test(ordersResult.error.message || "")) {
-        ordersResult = await fetchPagedRows(
+    const canReadHistory = accessResolved && ["owner", "manager", "viewer"].includes(currentRole);
+    orders = [];
+    closeouts = [];
+    inventoryMovements = [];
+    businessDays = [];
+    shifts = [];
+    payments = [];
+    promotions = [];
+    promotionUsage = [];
+    dailyOperations = [];
+    reconciliations = [];
+    upsellEvents = [];
+    dataQualityIssues = [];
+    auditLogs = [];
+
+    if (canReadHistory) {
+      try {
+        let ordersResult = await fetchPagedRows(
           "orders",
-          "id, day, time_text, payment_method, total, status, created_at, order_items(product_id, name, qty, price)",
+          "id, shift_id, day, time_text, payment_method, total, total_amount, discount_amount, final_amount, status, cashier, note, created_at, is_test, promotion_id, promotion_code, promotion_note, promotion_name_snapshot, complimentary_reason, cancel_reason, cancelled_at, refund_amount, order_items(product_id, product_uid, name, product_name, category, product_type, subcategory, qty, quantity, price, unit_price, subtotal, item_type, promotion_code, gift_reason), payments(payment_id, payment_method, amount, payment_status, reference_number)",
           "created_at"
         );
+        if (ordersResult.error && /column|schema cache|relationship|select/i.test(ordersResult.error.message || "")) {
+          ordersResult = await fetchPagedRows(
+            "orders",
+            "id, day, time_text, payment_method, total, status, created_at, order_items(product_id, name, qty, price)",
+            "created_at"
+          );
+        }
+        if (ordersResult.error) throw ordersResult.error;
+        orders = ordersResult.data || [];
+      } catch (error) {
+        issues.push("订单");
       }
-      if (ordersResult.error) throw ordersResult.error;
-      orders = ordersResult.data || [];
-    } catch (error) {
-      orders = [];
-      issues.push("订单");
-    }
 
-    try {
-      const closeoutsResult = await client
-        .from("closeouts")
-        .select("*")
-        .order("day", { ascending: false });
-      if (closeoutsResult.error) throw closeoutsResult.error;
-      closeouts = closeoutsResult.data || [];
-    } catch (error) {
-      closeouts = [];
-      issues.push("日结");
-    }
-
-    try {
-      const movementsResult = await fetchPagedRows(
-        "inventory_movements",
-        "*",
-        "created_at"
-      );
-      if (movementsResult.error) throw movementsResult.error;
-      inventoryMovements = movementsResult.data || [];
-    } catch (error) {
-      inventoryMovements = [];
-      issues.push("库存记录");
-    }
-
-    try {
-      const businessDaysResult = await client
-        .from("business_days")
-        .select("*")
-        .order("day", { ascending: false });
-      if (businessDaysResult.error) throw businessDaysResult.error;
-      businessDays = businessDaysResult.data || [];
-    } catch (error) {
-      businessDays = [];
-    }
-
-    try {
-      const profileResult = await client.from("user_profiles").select("user_id, email, display_name, role, is_active");
-      if (profileResult.error) throw profileResult.error;
-      userProfiles = profileResult.data || [];
-      const ownProfile = userProfiles.find(profile => currentSession && profile.user_id === currentSession.user.id);
-      if (ownProfile && ownProfile.is_active === false) {
-        POS.showToast("此员工账号已停用");
-        await new Promise(resolve => window.setTimeout(resolve, 900));
-        await client.auth.signOut();
-        window.location.reload();
-        return;
+      try {
+        const closeoutsResult = await client
+          .from("closeouts")
+          .select("*")
+          .order("day", { ascending: false });
+        if (closeoutsResult.error) throw closeoutsResult.error;
+        closeouts = closeoutsResult.data || [];
+      } catch (error) {
+        issues.push("日结");
       }
-      currentRole = ownProfile && ownProfile.is_active !== false ? ownProfile.role : "viewer";
+
+      try {
+        const movementsResult = await fetchPagedRows("inventory_movements", "*", "created_at");
+        if (movementsResult.error) throw movementsResult.error;
+        inventoryMovements = movementsResult.data || [];
+      } catch (error) {
+        issues.push("库存记录");
+      }
+
+      try {
+        const businessDaysResult = await client
+          .from("business_days")
+          .select("*")
+          .order("day", { ascending: false });
+        if (businessDaysResult.error) throw businessDaysResult.error;
+        businessDays = businessDaysResult.data || [];
+      } catch (error) {
+        businessDays = [];
+      }
+
+      if (["owner", "manager"].includes(currentRole)) {
+        const profileResult = await client.from("user_profiles").select("user_id, email, display_name, role, is_active");
+        if (!profileResult.error) userProfiles = profileResult.data || userProfiles;
+      }
+
       const results = await Promise.all([
         client.from("shifts").select("*").order("opened_at", { ascending: false }),
         fetchPagedRows("payments", "*", "created_at"),
@@ -423,18 +475,6 @@
         client.from("audit_logs").select("*").order("created_at", { ascending: false }).limit(80)
       ]);
       [shifts, payments, promotions, promotionUsage, dailyOperations, reconciliations, upsellEvents, dataQualityIssues, auditLogs] = results.map(result => result.error ? [] : (result.data || []));
-      p1Enabled = !results[0].error && !results[1].error && !results[2].error;
-    } catch (error) {
-      shifts = [];
-      payments = [];
-      promotions = [];
-      promotionUsage = [];
-      dailyOperations = [];
-      reconciliations = [];
-      upsellEvents = [];
-      dataQualityIssues = [];
-      auditLogs = [];
-      p1Enabled = false;
     }
 
     if (issues.length) {
@@ -1368,24 +1408,18 @@
       return `<div class="business-row"><div><strong>${escapeHtml(row.display_name || row.email || row.user_id)}</strong><span>${POS.roleLabel(row.role)} · ${row.is_active === false ? "已停用" : "可登录"}${isSelf ? " · 当前账号" : ""}</span></div>${controls}</div>`;
     }).join("") : `<div class="empty">当前账号只能查看自己的权限。</div>`;
     if (el.auditList) el.auditList.innerHTML = auditLogs.length ? auditLogs.slice(0, 40).map(row => `<div class="business-row"><div><strong>${escapeHtml(row.action || row.action_type || "操作")}</strong><span>${escapeHtml(row.entity_type || "")} · ${escapeHtml(String(row.created_at || "").replace("T", " ").slice(0, 16))}</span></div><span>${escapeHtml(row.reason || row.note || "")}</span></div>`).join("") : `<div class="empty">无可查看的操作日志。</div>`;
-    if (p1Enabled) {
-      const allowedViews = currentRole === "cashier"
-        ? new Set(["stock"])
-        : currentRole === "viewer"
-          ? new Set(["home", "analytics", "inventory", "orders", "business", "shifts"])
-          : new Set(Object.values(adminViewByHash).filter(view => view !== "closeout"));
-      document.querySelectorAll("[data-admin-nav]").forEach(link => {
-        link.hidden = !allowedViews.has(link.dataset.adminNav);
-      });
-      [el.exportOrdersCsv, el.exportItemsCsv, el.exportInventoryCsv, el.exportShiftsCsv,
-        el.exportPaymentsCsv, el.exportPromotionsCsv, el.exportPromotionUsageCsv,
-        el.exportUpsellCsv, el.exportOperationsCsv, el.exportXlsx].filter(Boolean).forEach(button => {
-        button.hidden = currentRole !== "owner";
-      });
-      if (el.businessDayForm) Array.from(el.businessDayForm.elements).forEach(field => { field.disabled = !manager; });
-      if (!allowedViews.has(currentAdminView())) {
-        window.location.hash = currentRole === "cashier" ? "#stockManagement" : "#home";
-      }
+    const allowedViews = allowedAdminViews();
+    document.querySelectorAll("[data-admin-nav]").forEach(link => {
+      link.hidden = !allowedViews.has(link.dataset.adminNav);
+    });
+    [el.exportOrdersCsv, el.exportItemsCsv, el.exportInventoryCsv, el.exportShiftsCsv,
+      el.exportPaymentsCsv, el.exportPromotionsCsv, el.exportPromotionUsageCsv,
+      el.exportUpsellCsv, el.exportOperationsCsv, el.exportXlsx].filter(Boolean).forEach(button => {
+      button.hidden = currentRole !== "owner";
+    });
+    if (el.businessDayForm) Array.from(el.businessDayForm.elements).forEach(field => { field.disabled = !manager; });
+    if (accessResolved) {
+      setAdminView(currentAdminView());
     }
   }
 

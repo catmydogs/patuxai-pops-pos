@@ -1345,6 +1345,11 @@ aside {
   color: var(--muted);
 }
 
+body[data-pos-role="cashier"] .range,
+body[data-pos-role="cashier"] .date-search-panel {
+  display: none !important;
+}
+
 .role-controls {
   display: flex;
   gap: 8px;

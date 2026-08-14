@@ -15,6 +15,7 @@
   const currentRoleKey = "patuxai-pops-current-role";
   const currentShiftKey = "patuxai-pops-current-shift";
   const promotionsCacheKey = "patuxai-pops-promotions-cache";
+  const todayBusinessSummaryKey = `patuxai-pops-business-summary-${todayKey}`;
   const lowStockThreshold = POS.lowStockThreshold || 10;
   let products = [];
   let orders = [];
@@ -45,6 +46,8 @@
   let orderDbPromise = null;
   let orderSyncInFlight = null;
   let orderRetryTimer = null;
+  let todayBusinessSummary = null;
+  let todayBusinessSummaryLive = false;
 
   function pendingReservedQty(productId) {
     return pendingOrders.reduce((sum, order) => sum + (order.order_items || [])
@@ -105,6 +108,11 @@
     managementLink: document.querySelector("#managementLink"),
     roleModeBadge: document.querySelector("#roleModeBadge"),
     ownerReports: document.querySelector("#ownerReports"),
+    businessSummaryScope: document.querySelector("#businessSummaryScope"),
+    shiftTodaySummary: document.querySelector("#shiftTodaySummary"),
+    shiftTodaySales: document.querySelector("#shiftTodaySales"),
+    shiftTodayOrders: document.querySelector("#shiftTodayOrders"),
+    shiftTodayItems: document.querySelector("#shiftTodayItems"),
     sortModeBtn: document.querySelector("#sortModeBtn"),
     sortToolbar: document.querySelector("#sortToolbar"),
     cancelSortBtn: document.querySelector("#cancelSortBtn"),
@@ -135,6 +143,10 @@
     beverageItemCount: document.querySelector("#beverageItemCount"),
     bundleItemCount: document.querySelector("#bundleItemCount"),
     otherItemCount: document.querySelector("#otherItemCount"),
+    todayCashSales: document.querySelector("#todayCashSales"),
+    todayQrSales: document.querySelector("#todayQrSales"),
+    todayTransferSales: document.querySelector("#todayTransferSales"),
+    todayOtherSales: document.querySelector("#todayOtherSales"),
     topItem: document.querySelector("#topItem"),
     ordersBody: document.querySelector("#ordersBody"),
     syncBadge: document.querySelector("#syncBadge"),
@@ -697,7 +709,8 @@
         el.managementLink.textContent = "查看报表";
       }
     }
-    if (el.ownerReports) el.ownerReports.hidden = p1Enabled && !manager;
+    if (el.ownerReports) el.ownerReports.hidden = p1Enabled && currentRole === "viewer";
+    if (el.shiftTodaySummary) el.shiftTodaySummary.hidden = p1Enabled && currentRole === "viewer";
     if (el.complimentaryPayBtn) el.complimentaryPayBtn.hidden = p1Enabled && !manager;
     if (p1Enabled && !manager && payMethod === "complimentary") payMethod = "cash";
     if (el.shiftStockNote) {
@@ -847,6 +860,28 @@
     }
   }
 
+  async function loadTodayBusinessSummary() {
+    todayBusinessSummaryLive = false;
+    if (!p1Enabled || currentRole === "viewer") {
+      todayBusinessSummary = null;
+      return false;
+    }
+    todayBusinessSummary = readJson(todayBusinessSummaryKey, null);
+    if (!POS.isOnline()) return false;
+    try {
+      const result = await client.rpc("get_today_business_summary", { p_business_date: POS.todayKey() });
+      if (result.error) throw result.error;
+      const row = Array.isArray(result.data) ? result.data[0] : result.data;
+      if (!row || typeof row !== "object") return false;
+      todayBusinessSummary = row;
+      todayBusinessSummaryLive = true;
+      writeJson(todayBusinessSummaryKey, row);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
   function mixedAmounts() {
     return {
       cash: Number(el.mixedCashInput && el.mixedCashInput.value || 0),
@@ -923,10 +958,8 @@
     await hydrateLocalShell(session);
     await loadP1Context(session);
     if (pendingOrders.length) scheduleOrderRetry(0);
-    await Promise.allSettled([
-      loadProducts({ silent: true, attempts: 1 }),
-      loadTodayOrders()
-    ]);
+    await Promise.allSettled([loadProducts({ silent: true, attempts: 1 }), loadTodayOrders()]);
+    await loadTodayBusinessSummary();
     reconcilePromotion();
     renderAll();
     updateSyncStatus();
@@ -1844,6 +1877,7 @@
       checkoutInFlight = false;
       if (POS.isOnline()) await loadProducts({ silent: true, attempts: 1 });
       await loadTodayOrders();
+      await loadTodayBusinessSummary();
       renderAll();
       updateSyncStatus();
     }
@@ -1871,16 +1905,54 @@
     });
     const top = [...itemMap.entries()].sort((a, b) => b[1] - a[1])[0];
 
-    el.salesTotal.textContent = POS.money(sales);
-    el.orderCount.textContent = activeOrders.length;
-    el.itemCount.textContent = count;
-    el.icecreamItemCount.textContent = categoryCounts.icecream;
-    el.serviceItemCount.textContent = categoryCounts.service;
-    el.merchandiseItemCount.textContent = categoryCounts.merchandise;
-    el.beverageItemCount.textContent = categoryCounts.beverage;
-    el.bundleItemCount.textContent = categoryCounts.bundle;
-    el.otherItemCount.textContent = categoryCounts.other;
-    el.topItem.textContent = top ? formatOrderItemName({ name: top[0] }) : "暂无";
+    const payments = { cash: 0, qr: 0, bank_transfer: 0, other: 0 };
+    activeOrders.forEach(order => {
+      const rows = Array.isArray(order.payments) && order.payments.length
+        ? order.payments.filter(row => row.payment_status !== "refunded")
+        : [{ payment_method: order.payment_method, amount: orderAmount(order) }];
+      rows.forEach(row => {
+        const method = POS.normalizePaymentMethod(row.payment_method);
+        const key = ["cash", "qr", "bank_transfer"].includes(method) ? method : "other";
+        payments[key] += Number(row.amount || 0);
+      });
+    });
+    const summary = todayBusinessSummary || {
+      sales_amount: sales,
+      order_count: activeOrders.length,
+      item_count: count,
+      icecream_count: categoryCounts.icecream,
+      service_count: categoryCounts.service,
+      merchandise_count: categoryCounts.merchandise,
+      beverage_count: categoryCounts.beverage,
+      bundle_count: categoryCounts.bundle,
+      other_count: categoryCounts.other,
+      cash_sales: payments.cash,
+      qr_sales: payments.qr,
+      transfer_sales: payments.bank_transfer,
+      other_sales: payments.other,
+      top_product: top ? top[0] : ""
+    };
+
+    el.salesTotal.textContent = POS.money(summary.sales_amount || 0);
+    el.orderCount.textContent = Number(summary.order_count || 0);
+    el.itemCount.textContent = Number(summary.item_count || 0);
+    el.icecreamItemCount.textContent = Number(summary.icecream_count || 0);
+    el.serviceItemCount.textContent = Number(summary.service_count || 0);
+    el.merchandiseItemCount.textContent = Number(summary.merchandise_count || 0);
+    el.beverageItemCount.textContent = Number(summary.beverage_count || 0);
+    el.bundleItemCount.textContent = Number(summary.bundle_count || 0);
+    el.otherItemCount.textContent = Number(summary.other_count || 0);
+    el.topItem.textContent = summary.top_product ? formatOrderItemName({ name: summary.top_product }) : "暂无";
+    if (el.todayCashSales) el.todayCashSales.textContent = POS.money(summary.cash_sales || 0);
+    if (el.todayQrSales) el.todayQrSales.textContent = POS.money(summary.qr_sales || 0);
+    if (el.todayTransferSales) el.todayTransferSales.textContent = POS.money(summary.transfer_sales || 0);
+    if (el.todayOtherSales) el.todayOtherSales.textContent = POS.money(summary.other_sales || 0);
+    if (el.businessSummaryScope) el.businessSummaryScope.textContent = todayBusinessSummary
+      ? (todayBusinessSummaryLive ? "全店实时" : "全店最近同步")
+      : "本账号数据";
+    if (el.shiftTodaySales) el.shiftTodaySales.textContent = POS.money(summary.sales_amount || 0);
+    if (el.shiftTodayOrders) el.shiftTodayOrders.textContent = Number(summary.order_count || 0);
+    if (el.shiftTodayItems) el.shiftTodayItems.textContent = Number(summary.item_count || 0);
 
     const visibleOrders = orders.filter(order => POS.isRevenueOrder(order) || order.status === "pending");
     el.ordersBody.innerHTML = visibleOrders.length ? visibleOrders.map(order => {
@@ -2080,16 +2152,25 @@
     savePendingOrders();
   });
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") scheduleOrderRetry(0);
+    if (document.visibilityState === "visible") {
+      scheduleOrderRetry(0);
+      loadTodayBusinessSummary().then(renderReports).catch(() => {});
+    }
   });
   if (el.syncBadge) el.syncBadge.addEventListener("click", manualMenuSync);
   if (el.retryOrdersBtn) el.retryOrdersBtn.addEventListener("click", () => {
     retrySync(false, true).then(async () => {
       await loadProducts({ silent: true, attempts: 1 });
       await loadTodayOrders();
+      await loadTodayBusinessSummary();
       renderAll();
     }).catch(error => POS.showToast(error.message || "订单同步失败"));
   });
+
+  window.setInterval(() => {
+    if (!currentSession || document.visibilityState !== "visible" || !POS.isOnline()) return;
+    loadTodayBusinessSummary().then(renderReports).catch(() => {});
+  }, 60000);
 
   POS.initAuth(client, refresh).catch(error => POS.showToast(error.message));
 })();

@@ -1,5 +1,5 @@
 (function () {
-  const appVersion = "20260812-closed-shift-recovery-r35";
+  const appVersion = "20260814-employee-today-dashboard-r37";
   let databaseReachable = null;
 
   function markDatabaseReachable(reachable) {

@@ -1,5 +1,5 @@
 (function () {
-  const appVersion = "20260814-employee-access-lockdown-r38";
+  const appVersion = "20260917-phase0-r39";
   let databaseReachable = null;
 
   function markDatabaseReachable(reachable) {
@@ -387,7 +387,10 @@
           return { data: null, error: { message: friendlyNetworkError(error) } };
         }
         if (!response.ok) {
-          return { data: null, error: { message: normalizeApiError(await response.text()) } };
+          const body = await response.text();
+          let code;
+          try { code = JSON.parse(body).code; } catch { /* Non-JSON gateway error. */ }
+          return { data: null, error: { message: normalizeApiError(body), code, status: response.status } };
         }
         const text = await response.text();
         return { data: text ? JSON.parse(text) : null, error: null };
@@ -527,6 +530,29 @@
       day: "numeric",
       weekday: "long"
     }).format(new Date());
+  }
+
+  // Escape text and quoted HTML attributes, including offline/cache-sourced values.
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, char => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[char]));
+  }
+
+  function safeImageUrl(value) {
+    const path = String(value ?? "").trim();
+    if (!path || /[\u0000-\u001f\u007f\\]/.test(path)) return "";
+    // Existing uploads are raster data URLs. SVG/HTML/blob URLs are not accepted.
+    if (/^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=]+$/i.test(path)) return path;
+    if (/^https?:\/\//i.test(path)) {
+      try {
+        const url = new URL(path);
+        return url.username || url.password ? "" : url.href;
+      } catch { return ""; }
+    }
+    // App assets work on HTTPS and Capacitor; disallow arbitrary schemes and // hosts.
+    return /^(?:\.\/)?assets\/[a-z0-9_./%-]+(?:[?#][a-z0-9_=&%.-]*)?$/i.test(path)
+      && !/(?:\.\.|%2e|%2f)/i.test(path) ? path : "";
   }
 
   function csvEscape(value) {
@@ -736,6 +762,8 @@
     canManage,
     isRevenueOrder,
     normalizeProduct,
+    escapeHtml,
+    safeImageUrl,
     csvEscape,
     showToast,
     setSyncStatus,

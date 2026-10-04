@@ -1,4 +1,4 @@
-const CACHE_NAME = "patuxai-pops-pos-20260814-employee-access-lockdown-r38";
+const CACHE_NAME = "patuxai-pops-pos-20260917-phase0-r39";
 const APP_SHELL = [
   "./",
   "./index.html",

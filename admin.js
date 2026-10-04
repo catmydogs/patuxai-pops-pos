@@ -738,7 +738,7 @@
       const detail = row.amount ? `${POS.money(row.amount)} · ${row.qty} 件` : `${row.qty} 件`;
       return `
         <div class="bar-row">
-          <div class="bar-label"><strong>${row.name}</strong><span>${detail}</span></div>
+          <div class="bar-label"><strong>${escapeHtml(row.name)}</strong><span>${detail}</span></div>
           <div class="bar"><span style="width: ${width}%"></span></div>
         </div>
       `;
@@ -1128,7 +1128,7 @@
       const isOriginalIcecream = currentProductIds.has(product.id);
       return `
       <form class="menu-row" data-product-form="${escapeAttr(product.id)}">
-        <img class="menu-thumb" src="${escapeAttr(product.image_path)}" alt="${escapeAttr(product.name)}">
+        <img class="menu-thumb" src="${escapeAttr(POS.safeImageUrl(product.image_path) || "assets/icons/app-icon-512.png")}" alt="${escapeAttr(product.name)}">
         <div class="menu-row-title">
           <strong>${escapeHtml(product.category === "icecream" ? "冰淇淋产品" : "普通产品")}</strong>
           <small>永久 ID：${escapeHtml(product.has_stable_product_id ? product.product_id : "执行升级 SQL 后生成")}</small>
@@ -1182,27 +1182,27 @@
         </label>
         <label>
           售价 KIP
-          <input class="field-input" name="price" type="number" min="0" step="1000" value="${product.selling_price}" required>
+          <input class="field-input" name="price" type="number" min="0" step="1000" value="${escapeAttr(product.selling_price)}" required>
         </label>
         <label>
           库存
-          <input class="field-input" name="stock" type="number" min="0" step="1" value="${product.stock}" required>
+          <input class="field-input" type="number" value="${escapeAttr(product.stock)}" disabled title="请在库存页面调整">
         </label>
         <label>
           排序
-          <input class="field-input" name="sort_order" type="number" step="1" value="${product.sort_order}" required>
+          <input class="field-input" name="sort_order" type="number" step="1" value="${escapeAttr(product.sort_order)}" required>
         </label>
         <label>
           低库存提醒
-          <input class="field-input" name="low_stock_threshold" type="number" min="0" step="1" value="${product.low_stock_threshold || lowStockThreshold}" required>
+          <input class="field-input" name="low_stock_threshold" type="number" min="0" step="1" value="${escapeAttr(product.low_stock_threshold || lowStockThreshold)}" required>
         </label>
         <label>
           形状排序
-          <input class="field-input" name="shape_order" type="number" step="1" value="${product.shape_order || 0}">
+          <input class="field-input" name="shape_order" type="number" step="1" value="${escapeAttr(product.shape_order || 0)}">
         </label>
         <label>
           口味排序
-          <input class="field-input" name="flavor_order" type="number" step="1" value="${product.flavor_order || 0}">
+          <input class="field-input" name="flavor_order" type="number" step="1" value="${escapeAttr(product.flavor_order || 0)}">
         </label>
         <label>
           图片路径
@@ -1282,14 +1282,14 @@
         <div class="movement-item">
           <div>
             <strong>${escapeHtml(item.product_name)}</strong>
-            <small>${escapeHtml(item.business_date || item.day)} ${escapeHtml(item.time_text)} · ${reasonText(reason)}${item.note ? ` · ${escapeHtml(item.note)}` : ""}</small>
-            ${p1Enabled && POS.canManage(currentRole) && item.movement_type === "waste" && !item.approved_by ? `<button class="mini-button" type="button" data-approve-waste="${item.movement_id}">审核报损</button>` : ""}
+            <small>${escapeHtml(item.business_date || item.day)} ${escapeHtml(item.time_text)} · ${escapeHtml(reasonText(reason))}${item.note ? ` · ${escapeHtml(item.note)}` : ""}</small>
+            ${p1Enabled && POS.canManage(currentRole) && item.movement_type === "waste" && !item.approved_by ? `<button class="mini-button" type="button" data-approve-waste="${escapeHtml(item.movement_id)}">审核报损</button>` : ""}
             ${item.movement_type === "waste" && item.approved_by ? `<small>已审核</small>` : ""}
-            ${p1Enabled && currentRole === "owner" && item.movement_id && !item.reversed_movement_id && !["sale", "gift", "return"].includes(item.movement_type) ? `<button class="mini-button" type="button" data-reverse-movement="${item.movement_id}">撤销这次调整</button>` : ""}
+            ${p1Enabled && currentRole === "owner" && item.movement_id && !item.reversed_movement_id && !["sale", "gift", "return"].includes(item.movement_type) ? `<button class="mini-button" type="button" data-reverse-movement="${escapeHtml(item.movement_id)}">撤销这次调整</button>` : ""}
           </div>
           <div class="movement-numbers">
             <strong class="${tone}">${sign}${change}</strong>
-            <small>${item.stock_before ?? item.before_stock} → ${item.stock_after ?? item.after_stock}</small>
+            <small>${escapeHtml(item.stock_before ?? item.before_stock)} → ${escapeHtml(item.stock_after ?? item.after_stock)}</small>
           </div>
         </div>
       `;
@@ -1390,7 +1390,7 @@
       return `
       <div class="business-row">
         <div><strong>${escapeHtml(row.promotion_name)}</strong><span>${escapeHtml(row.promotion_code)} · ${escapeHtml(row.promotion_type)} · ${uses.length} 单 · 销售 ${POS.money(promoSales)} · 折扣 ${POS.money(discounts)} · 赠品 ${gifts}</span><span>促销客单 ${POS.money(Math.round(promoAverage))} · 非促销客单 ${POS.money(Math.round(baselineAverage))} · 每单件数 ${promoItems.toFixed(2)} / ${baselineItems.toFixed(2)}${peakHour ? ` · 高峰 ${String(peakHour[0]).padStart(2, "0")}:00` : ""}</span></div>
-        <div><strong>${row.is_active ? "生效中" : "已停用"}</strong>${manager ? `<button class="mini-button" type="button" data-toggle-promotion="${row.promotion_id}">${row.is_active ? "停用" : "启用"}</button>` : ""}</div>
+        <div><strong>${row.is_active ? "生效中" : "已停用"}</strong>${manager ? `<button class="mini-button" type="button" data-toggle-promotion="${escapeHtml(row.promotion_id)}">${row.is_active ? "停用" : "启用"}</button>` : ""}</div>
       </div>`;
     }).join("") : `<div class="empty">还没有促销规则。</div>`;
 
@@ -1398,13 +1398,13 @@
     if (el.reconciliationList) el.reconciliationList.innerHTML = visibleRecs.length ? visibleRecs.map(row => `
       <div class="business-row">
         <div><strong>${escapeHtml(row.business_date)} · ${escapeHtml(row.status)}</strong><span>${row.shift_count} 个班次 · ${row.open_shifts} 个未关闭 · 销售 ${POS.money(row.total_sales || 0)}</span><span>退款 ${POS.money(row.refund_total || 0)} · 折扣 ${POS.money(row.discount_total || 0)} · 赠品 ${row.gift_quantity || 0} · 取消 ${row.cancelled_orders || 0}</span></div>
-        <div><strong>现金差额 ${POS.money(row.cash_difference || 0)}</strong><span>QR ${POS.money(row.qr_expected || 0)} / ${POS.money(row.qr_actual || 0)} · 差额 ${POS.money(row.qr_difference || 0)}</span><span>转账 ${POS.money(row.transfer_expected || 0)} / ${POS.money(row.transfer_actual || 0)} · 混合 ${POS.money(row.mixed_total || 0)} · 其他 ${POS.money(row.other_total || 0)}</span>${manager && row.status !== "reviewed" ? `<button class="mini-button" data-review-reconciliation="${row.business_date}">确认审核</button>` : ""}</div>
+        <div><strong>现金差额 ${POS.money(row.cash_difference || 0)}</strong><span>QR ${POS.money(row.qr_expected || 0)} / ${POS.money(row.qr_actual || 0)} · 差额 ${POS.money(row.qr_difference || 0)}</span><span>转账 ${POS.money(row.transfer_expected || 0)} / ${POS.money(row.transfer_actual || 0)} · 混合 ${POS.money(row.mixed_total || 0)} · 其他 ${POS.money(row.other_total || 0)}</span>${manager && row.status !== "reviewed" ? `<button class="mini-button" data-review-reconciliation="${escapeHtml(row.business_date)}">确认审核</button>` : ""}</div>
       </div>`).join("") : `<div class="empty">点击“刷新所选日期”生成对账结果。</div>`;
 
     if (el.dataQualityList) el.dataQualityList.innerHTML = dataQualityIssues.length ? dataQualityIssues.map(row => `<div class="alert-item ${escapeAttr(row.severity)}"><strong>${escapeHtml(row.issue_type)}</strong><span>${escapeHtml(row.detail || row.record_id)}</span></div>`).join("") : `<div class="empty">当前未发现结构性数据问题。</div>`;
     if (el.rolesList) el.rolesList.innerHTML = userProfiles.length ? userProfiles.map(row => {
       const isSelf = Boolean(currentSession && currentSession.user && currentSession.user.id === row.user_id);
-      const controls = currentRole === "owner" ? `<div class="role-controls"><select class="field-input role-select" data-role-user="${row.user_id}" ${isSelf ? "disabled" : ""}>${["owner", "manager", "cashier", "viewer"].map(role => `<option value="${role}" ${row.role === role ? "selected" : ""}>${POS.roleLabel(role)}</option>`).join("")}</select><button class="mini-button" type="button" data-user-active="${row.user_id}" data-next-active="${row.is_active === false ? "true" : "false"}" ${isSelf ? "disabled" : ""}>${row.is_active === false ? "启用" : "停用"}</button></div>` : `<strong>${POS.roleLabel(row.role)}</strong>`;
+      const controls = currentRole === "owner" ? `<div class="role-controls"><select class="field-input role-select" data-role-user="${escapeHtml(row.user_id)}" ${isSelf ? "disabled" : ""}>${["owner", "manager", "cashier", "viewer"].map(role => `<option value="${role}" ${row.role === role ? "selected" : ""}>${POS.roleLabel(role)}</option>`).join("")}</select><button class="mini-button" type="button" data-user-active="${escapeHtml(row.user_id)}" data-next-active="${row.is_active === false ? "true" : "false"}" ${isSelf ? "disabled" : ""}>${row.is_active === false ? "启用" : "停用"}</button></div>` : `<strong>${POS.roleLabel(row.role)}</strong>`;
       return `<div class="business-row"><div><strong>${escapeHtml(row.display_name || row.email || row.user_id)}</strong><span>${POS.roleLabel(row.role)} · ${row.is_active === false ? "已停用" : "可登录"}${isSelf ? " · 当前账号" : ""}</span></div>${controls}</div>`;
     }).join("") : `<div class="empty">当前账号只能查看自己的权限。</div>`;
     if (el.auditList) el.auditList.innerHTML = auditLogs.length ? auditLogs.slice(0, 40).map(row => `<div class="business-row"><div><strong>${escapeHtml(row.action || row.action_type || "操作")}</strong><span>${escapeHtml(row.entity_type || "")} · ${escapeHtml(String(row.created_at || "").replace("T", " ").slice(0, 16))}</span></div><span>${escapeHtml(row.reason || row.note || "")}</span></div>`).join("") : `<div class="empty">无可查看的操作日志。</div>`;
@@ -1588,7 +1588,7 @@
           ${manager ? `<button class="mini-button stock-step" data-stock-step="${escapeAttr(product.id)}" data-step="1">+1</button><button class="mini-button stock-step" data-stock-step="${escapeAttr(product.id)}" data-step="5">+5</button><button class="mini-button stock-step" data-stock-step="${escapeAttr(product.id)}" data-step="10">+10</button><button class="mini-button stock-step" data-stock-zero="${escapeAttr(product.id)}">归零</button>` : ""}
         </div>
         <div class="stock-controls">
-          <input class="field-input stock-input" data-stock-input="${escapeAttr(product.id)}" type="number" min="0" ${manager ? "" : `max="${product.stock}"`} step="1" value="${product.stock}" aria-label="${escapeAttr(product.name)}库存" ${canRecordWaste ? "" : "disabled"}>
+          <input class="field-input stock-input" data-stock-input="${escapeAttr(product.id)}" type="number" min="0" ${manager ? "" : `max="${escapeAttr(product.stock)}"`} step="1" value="${escapeAttr(product.stock)}" aria-label="${escapeAttr(product.name)}库存" ${canRecordWaste ? "" : "disabled"}>
           <select class="field-input stock-reason" data-stock-reason="${escapeAttr(product.id)}" aria-label="${escapeAttr(product.name)}库存原因">
             ${manager ? `<option value="restock">补货</option><option value="adjustment">盘点调整</option>` : ""}
             ${p1Enabled ? `<option value="waste:melted">融化</option><option value="waste:damaged_packaging">包装损坏</option><option value="waste:production_issue">制作失败</option><option value="waste:expired">过期</option><option value="waste:customer_return">顾客退换</option><option value="waste:staff_error">员工操作失误</option><option value="waste:sampling">试吃</option><option value="waste:photo_shoot">拍摄使用</option><option value="waste:quality_issue">品质问题</option><option value="waste:other">其他</option>` : `<option value="waste">损耗</option><option value="sample">试吃</option>`}
@@ -1619,13 +1619,13 @@
       const canRefund = p1Enabled && POS.canManage(currentRole) && POS.isRevenueOrder(order) && order.shift_id;
       return `
         <tr>
-          <td>${order.day}</td>
-          <td>${order.time_text}</td>
-          <td>${items}</td>
+          <td>${escapeHtml(order.day)}</td>
+          <td>${escapeHtml(order.time_text)}</td>
+          <td>${escapeHtml(items)}</td>
           <td>${POS.paymentLabel(order.payment_method)}</td>
           <td><strong>${POS.money(orderAmount(order))}</strong></td>
-          <td>${order.is_test ? '<span class="status-tag test">测试</span> ' : ""}${statusLabel(order.status)}${order.cancel_reason ? `<small class="order-reason">${escapeHtml(order.cancel_reason)}</small>` : ""}</td>
-          <td>${canCancel ? `<button class="mini-button" data-void="${order.id}">取消</button>` : ""}${canRefund ? ` <button class="mini-button danger" data-refund="${order.id}">整单退款</button>` : ""}</td>
+          <td>${order.is_test ? '<span class="status-tag test">测试</span> ' : ""}${escapeHtml(statusLabel(order.status))}${order.cancel_reason ? `<small class="order-reason">${escapeHtml(order.cancel_reason)}</small>` : ""}</td>
+          <td>${canCancel ? `<button class="mini-button" data-void="${escapeHtml(order.id)}">取消</button>` : ""}${canRefund ? ` <button class="mini-button danger" data-refund="${escapeHtml(order.id)}">整单退款</button>` : ""}</td>
         </tr>
       `;
     }).join("") : `<tr><td colspan="7">当前范围内还没有订单。</td></tr>`;
@@ -1653,17 +1653,17 @@
   }
 
   function stockRow(productId) {
-    return document.querySelector(`[data-stock-row="${productId}"]`);
+    return document.querySelector(`[data-stock-row="${CSS.escape(productId)}"]`);
   }
 
   function updateStockDraft(productId, stock, options = {}) {
     const row = stockRow(productId);
-    const input = row && row.querySelector(`[data-stock-input="${productId}"]`);
-    const soldOut = row && row.querySelector(`[data-stock-soldout="${productId}"]`);
-    const reason = row && row.querySelector(`[data-stock-reason="${productId}"]`);
-    const note = row && row.querySelector(`[data-stock-note="${productId}"]`);
-    const count = row && row.querySelector(`[data-stock-count="${productId}"]`);
-    const state = row && row.querySelector(`[data-stock-state="${productId}"]`);
+    const input = row && row.querySelector(`[data-stock-input="${CSS.escape(productId)}"]`);
+    const soldOut = row && row.querySelector(`[data-stock-soldout="${CSS.escape(productId)}"]`);
+    const reason = row && row.querySelector(`[data-stock-reason="${CSS.escape(productId)}"]`);
+    const note = row && row.querySelector(`[data-stock-note="${CSS.escape(productId)}"]`);
+    const count = row && row.querySelector(`[data-stock-count="${CSS.escape(productId)}"]`);
+    const state = row && row.querySelector(`[data-stock-state="${CSS.escape(productId)}"]`);
     if (!input) return;
 
     const nextStock = Math.max(0, Math.floor(stock));
@@ -1697,7 +1697,7 @@
 
   function adjustStockDraft(productId, delta) {
     const row = stockRow(productId);
-    const input = row && row.querySelector(`[data-stock-input="${productId}"]`);
+    const input = row && row.querySelector(`[data-stock-input="${CSS.escape(productId)}"]`);
     if (!input) return;
     const current = Number(input.value || 0);
     const next = Math.max(0, current + delta);
@@ -1715,91 +1715,65 @@
     });
   }
 
-  async function saveStock(productId, button) {
-    const row = document.querySelector(`[data-stock-row="${productId}"]`);
-    const input = row && row.querySelector(`[data-stock-input="${productId}"]`);
-    const soldOut = row && row.querySelector(`[data-stock-soldout="${productId}"]`);
-    const reason = row && row.querySelector(`[data-stock-reason="${productId}"]`);
-    const note = row && row.querySelector(`[data-stock-note="${productId}"]`);
-    const stock = Number(input ? input.value : NaN);
+  async function inventoryRequest(key, rpc, payload) {
+    const userId = currentSession && currentSession.user && currentSession.user.id;
+    if (!userId) throw new Error("请先登录 / Sign in first");
+    const storageKey = `patuxai-inventory-request:${userId}:${key}`;
+    let request = JSON.parse(window.localStorage.getItem(storageKey) || "null");
+    if (!request) {
+      request = { rpc, payload: { ...payload, p_request_id: crypto.randomUUID() } };
+      // Never submit if durable persistence fails.
+      window.localStorage.setItem(storageKey, JSON.stringify(request));
+    } else {
+      POS.showToast("正在确认上次库存操作；本次新输入尚未提交 / Retrying previous inventory request");
+    }
+    const result = await client.rpc(request.rpc, request.payload);
+    if (!result.error || /^(?:P0001|22[0-9A-Z]{3}|23[0-9A-Z]{3}|42501)$/.test(result.error.code || "") ||
+        /PHASE0:/.test(result.error && result.error.message || "")) {
+      const stored = JSON.parse(window.localStorage.getItem(storageKey) || "null");
+      if (stored && stored.payload.p_request_id === request.payload.p_request_id) {
+        window.localStorage.removeItem(storageKey);
+      }
+    }
+    return result;
+  }
 
-    if (!Number.isFinite(stock) || stock < 0) {
-      POS.showToast("库存必须是 0 或更大的数字");
+  async function saveStock(productId, button) {
+    const row = stockRow(productId);
+    const input = row && row.querySelector("[data-stock-input]");
+    const reason = row && row.querySelector("[data-stock-reason]");
+    const note = row && row.querySelector("[data-stock-note]");
+    const soldOut = row && row.querySelector("[data-stock-soldout]");
+    const product = products.find(item => item.id === productId);
+    const stock = Number(input ? input.value : NaN);
+    if (!product || !Number.isSafeInteger(stock) || stock < 0) {
+      POS.showToast("库存必须是非负整数 / Stock must be a nonnegative integer");
       return false;
     }
-
+    if (product.inventory_version == null) {
+      POS.showToast("需要 Phase 0 数据库升级 / Phase 0 database migration required");
+      return false;
+    }
     POS.setBusy(button, true, "保存中");
-    let result;
     try {
-      const product = products.find(item => item.id === productId);
-      const delta = product ? Math.floor(stock) - Number(product.stock || 0) : 0;
-      if (p1Enabled && product) {
-        if (delta !== 0) {
-          const selectedReason = reason ? reason.value : "adjustment";
-          const [reasonGroup, reasonDetail] = selectedReason.split(":");
-          const movementType = reasonGroup === "restock" ? "received"
-            : reasonGroup === "waste" || reasonGroup === "sample" ? "waste"
-              : delta > 0 ? "adjustment_in" : "adjustment_out";
-          const reasonCode = reasonGroup === "restock" ? "received"
-            : reasonGroup === "sample" ? "sampling"
-              : reasonGroup === "waste" ? (reasonDetail || "quality_issue") : "count_adjustment";
-          result = await client.rpc("record_inventory_p1", {
-            p_product_id: productId,
-            p_movement_type: movementType,
-            p_quantity: Math.abs(delta),
-            p_reason_code: reasonCode,
-            p_note: note ? note.value.trim() : ""
-          });
-          if (result.error) throw result.error;
-        }
-        // The inventory RPC already updates stock and availability atomically.
-        // A zero-quantity save is the only case that needs a direct availability toggle.
-        if (delta === 0) {
-          result = await client.from("products").update({
-            sold_out: Boolean(soldOut && soldOut.checked),
-            is_available: !(soldOut && soldOut.checked) && stock > 0,
-            updated_at: new Date().toISOString()
-          }).eq("id", productId);
-        }
-      } else {
-      const payload = {
-        p_product_id: productId,
-        p_new_stock: Math.floor(stock),
-        p_sold_out: Boolean(soldOut && soldOut.checked),
+      const result = await inventoryRequest(`stock:${productId}`, "set_inventory_phase0", {
+        p_product_id: productId, p_new_stock: stock,
+        p_expected_version: product.inventory_version,
         p_reason: reason ? reason.value : "adjustment",
         p_note: note ? note.value.trim() : "",
-        p_time_text: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
-        p_day: todayKey,
-        p_operator: document.querySelector("#signedInAs") ? document.querySelector("#signedInAs").textContent : ""
-      };
-      result = await client.rpc("adjust_stock", payload);
-      if (result.error && /function|schema cache|parameter|argument|Invalid adjustment reason/i.test(result.error.message || "")) {
-        result = await client.rpc("adjust_stock", {
-          p_product_id: payload.p_product_id,
-          p_new_stock: payload.p_new_stock,
-          p_sold_out: payload.p_sold_out,
-          p_reason: payload.p_reason === "restock" ? "restock" : payload.p_reason === "waste" ? "waste" : "correction",
-          p_note: payload.p_note,
-          p_time_text: payload.p_time_text,
-          p_day: payload.p_day
-        });
-      }
-      }
+        p_sold_out: Boolean(soldOut && soldOut.checked)
+      });
+      if (result.error) throw result.error;
+      POS.showToast("库存已保存并记录");
+      await refresh();
+      return true;
     } catch (error) {
       POS.showToast(error.message || "库存保存失败");
+      if (/PHASE0: stale/.test(error.message || "")) await refresh();
       return false;
     } finally {
       POS.setBusy(button, false);
     }
-
-    if (result && result.error) {
-      POS.showToast(result.error.message && result.error.message.includes("adjust_stock") ? "需要先执行库存记录数据库升级" : result.error.message || "库存保存失败");
-      return false;
-    }
-
-    POS.showToast("库存已保存并记录");
-    await refresh();
-    return true;
   }
 
   async function uploadProductImage(input) {
@@ -1881,7 +1855,6 @@
       price: Number(formData.get("price") || 0),
       selling_price: Number(formData.get("price") || 0),
       sale_price: Number(formData.get("price") || 0),
-      stock: Number(formData.get("stock") || 0),
       sort_order: Number(formData.get("sort_order") || 0),
       display_order: Number(formData.get("sort_order") || 0),
       shape_order: Number(formData.get("shape_order") || 0),
@@ -1900,12 +1873,12 @@
       updated_at: new Date().toISOString()
     };
 
-    if (!payload.name || !payload.category || !payload.image_path) {
-      POS.showToast("产品名、分类和图片路径不能为空");
+    if (!payload.name || !payload.category || !POS.safeImageUrl(payload.image_path)) {
+      POS.showToast("产品名、分类和有效图片路径不能为空 / Valid image URL required");
       return;
     }
 
-    if (!Number.isFinite(payload.price) || !Number.isFinite(payload.low_stock_threshold) || !Number.isFinite(payload.stock) || !Number.isFinite(payload.sort_order) || !Number.isFinite(payload.shape_order) || !Number.isFinite(payload.flavor_order)) {
+    if (!Number.isFinite(payload.price) || !Number.isFinite(payload.low_stock_threshold) || !Number.isFinite(payload.sort_order) || !Number.isFinite(payload.shape_order) || !Number.isFinite(payload.flavor_order)) {
       POS.showToast("价格、库存和排序必须是数字");
       return;
     }
@@ -1926,22 +1899,7 @@
     }
 
     if (result.error) {
-      const fallback = await client
-        .from("products")
-        .update({
-          stock: Math.floor(payload.stock),
-          sold_out: payload.sold_out,
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", productId);
-
-      if (fallback.error) {
-        POS.showToast(fallback.error.message || result.error.message || "保存失败");
-        return;
-      }
-
-      POS.showToast("库存已保存");
-      await refresh();
+      POS.showToast(result.error.message || "保存失败");
       return;
     }
 
@@ -1965,7 +1923,7 @@
       POS.showToast("产品名称和分类不能为空");
       return;
     }
-    if (!Number.isFinite(price) || price < 0 || !Number.isFinite(stock) || stock < 0 || !Number.isFinite(lowStock) || lowStock < 0) {
+    if (!Number.isFinite(price) || price < 0 || !Number.isSafeInteger(stock) || stock < 0 || !Number.isFinite(lowStock) || lowStock < 0) {
       POS.showToast("价格、库存和低库存提醒必须是 0 或更大的数字");
       return;
     }
@@ -2005,7 +1963,16 @@
     };
 
     POS.setBusy(button, true, "新增中");
-    const result = await client.from("products").upsert(payload);
+    let result;
+    try {
+      const initialStock = payload.stock;
+      delete payload.stock;
+      result = await inventoryRequest("new-product", "create_product_phase0", {
+        p_metadata: payload, p_initial_stock: initialStock
+      });
+    } catch (error) {
+      result = { error };
+    }
     POS.setBusy(button, false);
 
     if (result.error) {
@@ -2037,7 +2004,6 @@
         is_deleted: true,
         is_active: false,
         sold_out: true,
-        stock: 0,
         updated_at: new Date().toISOString()
       })
       .eq("id", productId);

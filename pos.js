@@ -1,5 +1,6 @@
 (function () {
   const client = POS.getClient();
+  const escapeHtml = POS.escapeHtml;
   const todayKey = POS.todayKey();
   const productsCacheKey = "patuxai-pops-products-cache";
   const pendingOrdersKey = "patuxai-pops-pending_sync_orders";
@@ -1238,10 +1239,10 @@
   };
 
   function assetUrl(path) {
-    if (window.POS_IMAGE_FALLBACKS && window.POS_IMAGE_FALLBACKS[path]) return window.POS_IMAGE_FALLBACKS[path];
-    if (!path || path.startsWith("data:") || /^https?:\/\//i.test(path)) return path;
-    const separator = path.includes("?") ? "&" : "?";
-    return `${path}${separator}v=${POS.appVersion || Date.now()}`;
+    const fallback = window.POS_IMAGE_FALLBACKS && window.POS_IMAGE_FALLBACKS[path];
+    const safe = POS.safeImageUrl(fallback || path) || "assets/icons/app-icon-512.png";
+    if (!safe || /^(?:data:|https?:)/i.test(safe)) return safe;
+    return `${safe}${safe.includes("?") ? "&" : "?"}v=${POS.appVersion}`;
   }
 
   function productToneStyle(flavorName) {
@@ -1275,7 +1276,7 @@
     const categories = ["全部", ...new Set(products.map(product => product.category))];
     el.categoryTabs.innerHTML = categories.map(category => {
       const active = category === activeCategory ? "active" : "";
-      return `<button class="tab ${active}" data-category="${category}">${category === "全部" ? "全部" : POS.categoryLabel(category)}</button>`;
+      return `<button class="tab ${active}" data-category="${escapeHtml(category)}">${category === "全部" ? "全部" : POS.categoryLabel(category)}</button>`;
     }).join("");
   }
 
@@ -1286,18 +1287,18 @@
     const low = product.track_inventory !== false && (stock <= (product.low_stock_threshold || lowStockThreshold) || product.sold_out) ? "low" : "";
     const stockText = product.track_inventory === false ? "无需库存" : isUnavailable ? "售罄" : `可售 ${stock}`;
     const imagePath = productImagePath(product);
-    const image = imagePath ? `<img class="product-image" src="${assetUrl(imagePath)}" alt="${product.name}">` : "";
+    const image = imagePath ? `<img class="product-image" src="${escapeHtml(assetUrl(imagePath))}" alt="${escapeHtml(product.name)}">` : "";
     const compact = mode === "compact";
     if (compact) {
       return `
         <article class="product product-compact ${low}" ${productToneStyle(product.flavor)}>
           ${image || `<div class="product-image product-image-placeholder">${POS.categoryLabel(product.category).slice(0, 2)}</div>`}
           <div class="product-body">
-            <h2>${productCardLabel(product)}</h2>
+            <h2>${escapeHtml(productCardLabel(product))}</h2>
             <div class="meta"><span>${POS.categoryLabel(product.category)}</span><span>${stockText}</span></div>
             <div class="price">${POS.money(product.selling_price)}</div>
           </div>
-          <button class="add compact-add" data-id="${product.id}" ${disabled}>${isUnavailable ? "售罄" : "加入"}</button>
+          <button class="add compact-add" data-id="${escapeHtml(product.id)}" ${disabled}>${isUnavailable ? "售罄" : "加入"}</button>
         </article>
       `;
     }
@@ -1305,10 +1306,10 @@
       <article class="product ${low}">
         ${image}
         <div class="product-body">
-          <h2>${product.name}</h2>
-          <div class="meta"><span>${product.note || POS.categoryLabel(product.category)}</span><span>${stockText}</span></div>
+          <h2>${escapeHtml(product.name)}</h2>
+          <div class="meta"><span>${escapeHtml(product.note || POS.categoryLabel(product.category))}</span><span>${stockText}</span></div>
           <div class="price">${POS.money(product.selling_price)}</div>
-          <button class="add" data-id="${product.id}" ${disabled}>${isUnavailable ? "已售罄" : "加入订单"}</button>
+          <button class="add" data-id="${escapeHtml(product.id)}" ${disabled}>${isUnavailable ? "已售罄" : "加入订单"}</button>
         </div>
       </article>
     `;
@@ -1326,12 +1327,12 @@
               const preview = categoryProducts.slice(0, 3).map(productLabel).join("、");
               const more = categoryProducts.length > 3 ? `等 ${categoryProducts.length} 款` : `${categoryProducts.length} 款`;
               return `
-                <article class="category-sort-card sortable-product" data-sort-category="${category}">
+                <article class="category-sort-card sortable-product" data-sort-category="${escapeHtml(category)}">
                   <div class="category-sort-copy">
                     <strong>${POS.categoryLabel(category)}</strong>
-                    <span>${preview}${preview ? " · " : ""}${more}</span>
+                    <span>${escapeHtml(preview)}${preview ? " · " : ""}${more}</span>
                   </div>
-                  <button class="sort-handle" type="button" data-sort-handle="${category}" aria-label="拖动调整 ${POS.categoryLabel(category)} 的顺序">⋮⋮</button>
+                  <button class="sort-handle" type="button" data-sort-handle="${escapeHtml(category)}" aria-label="拖动调整 ${POS.categoryLabel(category)} 的顺序">⋮⋮</button>
                 </article>
               `;
             }).join("")}
@@ -1342,7 +1343,7 @@
     return groups.map(category => {
       const categoryProducts = items.filter(product => (product.category || "other") === category);
       return `
-        <section class="product-group" aria-label="${category}">
+        <section class="product-group" aria-label="${escapeHtml(category)}">
           <div class="section-head">
             <h2>${POS.categoryLabel(category)}</h2>
             <span>${categoryProducts.length} 款</span>
@@ -1575,19 +1576,19 @@
           <article class="cart-item">
             <div class="cart-line">
               <div>
-                <div class="cart-title">${item.name}${isGift ? " · 赠品" : ""}</div>
-                <small>${POS.categoryLabel(item.category)} · ${isGift ? `${item.gift_reason || "赠品"} · 扣库存` : `${POS.money(item.price)} / 份 · 扣库存 ${item.qty}`}</small>
+                <div class="cart-title">${escapeHtml(item.name)}${isGift ? " · 赠品" : ""}</div>
+                <small>${POS.categoryLabel(item.category)} · ${isGift ? `${escapeHtml(item.gift_reason || "赠品")} · 扣库存` : `${POS.money(item.price)} / 份 · 扣库存 ${escapeHtml(item.qty)}`}</small>
               </div>
               <strong>${POS.money(lineTotal)}</strong>
             </div>
             <div class="cart-line">
               <div class="qty">
-                <button data-action="dec" data-line="${item.line_id}">-</button>
-                <strong>${item.qty}</strong>
-                <button data-action="inc" data-line="${item.line_id}">+</button>
+                <button data-action="dec" data-line="${escapeHtml(item.line_id)}">-</button>
+                <strong>${escapeHtml(item.qty)}</strong>
+                <button data-action="inc" data-line="${escapeHtml(item.line_id)}">+</button>
               </div>
-              ${canEditGift ? `<button class="remove" data-action="gift" data-line="${item.line_id}">${isGift ? "恢复销售" : "设为赠品"}</button>` : ""}
-              <button class="remove" data-action="remove" data-line="${item.line_id}">移除</button>
+              ${canEditGift ? `<button class="remove" data-action="gift" data-line="${escapeHtml(item.line_id)}">${isGift ? "恢复销售" : "设为赠品"}</button>` : ""}
+              <button class="remove" data-action="remove" data-line="${escapeHtml(item.line_id)}">移除</button>
             </div>
           </article>
         `;
@@ -1725,7 +1726,7 @@
     el.upsellHint.hidden = false;
     el.upsellHint.innerHTML = `
       <div class="upsell-copy"><span>${message}</span><strong>仅显示有库存商品</strong></div>
-      <div class="upsell-actions">${candidates.map(product => `<button type="button" data-upsell="${product.id}" data-upsell-type="${eventType}">${productLabel(product)} · ${POS.money(product.selling_price)}</button>`).join("")}<button class="upsell-dismiss" type="button" data-upsell-dismiss="${eventType}">不需要</button></div>`;
+      <div class="upsell-actions">${candidates.map(product => `<button type="button" data-upsell="${escapeHtml(product.id)}" data-upsell-type="${eventType}">${escapeHtml(productLabel(product))} · ${POS.money(product.selling_price)}</button>`).join("")}<button class="upsell-dismiss" type="button" data-upsell-dismiss="${eventType}">不需要</button></div>`;
     candidates.forEach(product => recordUpsell(eventType, product, "shown").catch(() => {}));
   }
 
@@ -1960,8 +1961,8 @@
       const pending = order.status === "pending" ? order.sync_status === "attention" ? " · 需处理" : " · 待同步" : "";
       return `
         <tr>
-          <td>${order.time_text}</td>
-          <td>${items}</td>
+          <td>${escapeHtml(order.time_text)}</td>
+          <td>${escapeHtml(items)}</td>
           <td>${POS.paymentLabel(order.payment_method)}${pending}</td>
           <td><strong>${POS.money(orderAmount(order))}</strong></td>
         </tr>
@@ -1988,7 +1989,7 @@
     }).join("、");
     const more = lowProducts.length > 5 ? `，另有 ${lowProducts.length - 5} 款` : "";
     el.lowStockAlert.hidden = false;
-    el.lowStockAlert.innerHTML = `<strong>库存提醒</strong><span>${visible}${more}</span>`;
+    el.lowStockAlert.innerHTML = `<strong>库存提醒</strong><span>${escapeHtml(visible)}${more}</span>`;
   }
 
   function renderAll() {

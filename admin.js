@@ -35,10 +35,13 @@
   let dataQualityIssues = [];
   let userProfiles = [];
   let auditLogs = [];
+  let productCostVersions = [];
+  let profitabilityAdjustments = [];
   let currentSession = null;
   let currentRole = "viewer";
   let accessResolved = false;
   let p1Enabled = false;
+  let profitabilityEnabled = false;
   let activeHourMetric = "amount";
 
   function persistFilters() {
@@ -89,6 +92,17 @@
     hourMetricSwitch: document.querySelector("#hourMetricSwitch"),
     productPerformance: document.querySelector("#productPerformance"),
     operationsAlerts: document.querySelector("#operationsAlerts"),
+    profitabilityCoverage: document.querySelector("#profitabilityCoverage"),
+    profitNetSales: document.querySelector("#profitNetSales"),
+    profitCogs: document.querySelector("#profitCogs"),
+    profitCogsDetail: document.querySelector("#profitCogsDetail"),
+    profitVariableCosts: document.querySelector("#profitVariableCosts"),
+    profitVariableDetail: document.querySelector("#profitVariableDetail"),
+    profitContribution: document.querySelector("#profitContribution"),
+    profitContributionDetail: document.querySelector("#profitContributionDetail"),
+    profitContributionRate: document.querySelector("#profitContributionRate"),
+    profitabilityByProduct: document.querySelector("#profitabilityByProduct"),
+    profitabilityByCategory: document.querySelector("#profitabilityByCategory"),
     categoryBreakdown: document.querySelector("#categoryBreakdown"),
     paymentSummary: document.querySelector("#paymentSummary"),
     categorySummary: document.querySelector("#categorySummary"),
@@ -407,14 +421,24 @@
     upsellEvents = [];
     dataQualityIssues = [];
     auditLogs = [];
+    productCostVersions = [];
+    profitabilityAdjustments = [];
+    profitabilityEnabled = false;
 
     if (canReadHistory) {
       try {
         let ordersResult = await fetchPagedRows(
           "orders",
-          "id, shift_id, day, time_text, payment_method, total, total_amount, discount_amount, final_amount, status, cashier, note, created_at, is_test, promotion_id, promotion_code, promotion_note, promotion_name_snapshot, complimentary_reason, cancel_reason, cancelled_at, refund_amount, order_items(product_id, product_uid, name, product_name, category, product_type, subcategory, qty, quantity, price, unit_price, subtotal, item_type, promotion_code, gift_reason), payments(payment_id, payment_method, amount, payment_status, reference_number)",
+          "id, shift_id, day, time_text, payment_method, total, total_amount, discount_amount, final_amount, status, cashier, note, created_at, is_test, promotion_id, promotion_code, promotion_note, promotion_name_snapshot, complimentary_reason, cancel_reason, cancelled_at, refund_amount, refunded_at, order_items(id, product_id, product_uid, name, product_name, category, product_type, subcategory, qty, quantity, price, unit_price, subtotal, item_type, promotion_code, gift_reason, production_cost_snapshot, packaging_cost_snapshot, other_variable_cost_snapshot, cost_version_id, cost_snapshot_status, cost_snapshot_sale_at, cost_snapshot_note), payments(payment_id, payment_method, amount, payment_status, reference_number)",
           "created_at"
         );
+        if (ordersResult.error && /column|schema cache|relationship|select/i.test(ordersResult.error.message || "")) {
+          ordersResult = await fetchPagedRows(
+            "orders",
+            "id, shift_id, day, time_text, payment_method, total, total_amount, discount_amount, final_amount, status, cashier, note, created_at, is_test, promotion_id, promotion_code, promotion_note, promotion_name_snapshot, complimentary_reason, cancel_reason, cancelled_at, refund_amount, refunded_at, order_items(product_id, product_uid, name, product_name, category, product_type, subcategory, qty, quantity, price, unit_price, subtotal, item_type, promotion_code, gift_reason), payments(payment_id, payment_method, amount, payment_status, reference_number)",
+            "created_at"
+          );
+        }
         if (ordersResult.error && /column|schema cache|relationship|select/i.test(ordersResult.error.message || "")) {
           ordersResult = await fetchPagedRows(
             "orders",
@@ -456,6 +480,16 @@
         businessDays = businessDaysResult.data || [];
       } catch (error) {
         businessDays = [];
+      }
+
+      const [costVersionsResult, profitabilityAdjustmentsResult] = await Promise.all([
+        fetchPagedRows("product_cost_versions", "*", "effective_from"),
+        fetchPagedRows("profitability_adjustments", "*", "occurred_at")
+      ]);
+      if (!costVersionsResult.error && !profitabilityAdjustmentsResult.error) {
+        productCostVersions = costVersionsResult.data || [];
+        profitabilityAdjustments = profitabilityAdjustmentsResult.data || [];
+        profitabilityEnabled = true;
       }
 
       if (["owner", "manager"].includes(currentRole)) {
@@ -517,6 +551,23 @@
 
   function itemSubtotal(item) {
     return Number(item.subtotal ?? (itemUnitPrice(item) * itemQty(item)) ?? 0);
+  }
+
+  function nullableCost(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const cost = Number(value);
+    return Number.isFinite(cost) && cost >= 0 ? cost : null;
+  }
+
+  function currentProductCost(productId) {
+    return productCostVersions
+      .filter(row => row.product_id === productId)
+      .sort((a, b) => String(b.effective_from || b.created_at || "").localeCompare(String(a.effective_from || a.created_at || "")))[0] || null;
+  }
+
+  function costInputValue(value) {
+    const cost = nullableCost(value);
+    return cost === null ? "" : String(cost);
   }
 
   function orderAmount(order) {
@@ -691,6 +742,152 @@
 
   function filteredInventoryMovements() {
     return inventoryMovements.filter(item => inActiveDateRange(item.day));
+  }
+
+  function allocateOrderAmount(order, targetAmount = orderAmount(order)) {
+    const items = order.order_items || [];
+    const revenueItems = items.filter(item => !["gift", "complimentary"].includes(item.item_type));
+    const gross = revenueItems.reduce((sum, item) => sum + itemSubtotal(item), 0);
+    const allocations = new Map(items.map(item => [item, 0]));
+    if (!revenueItems.length || targetAmount === 0) return allocations;
+    let allocated = 0;
+    revenueItems.forEach((item, index) => {
+      const amount = index === revenueItems.length - 1
+        ? targetAmount - allocated
+        : gross > 0 ? Math.round(targetAmount * itemSubtotal(item) / gross) : 0;
+      allocations.set(item, amount);
+      allocated += amount;
+    });
+    return allocations;
+  }
+
+  function profitabilityLines() {
+    const lines = [];
+    const officialOrders = orders.filter(order => order.is_test !== true);
+    officialOrders
+      .filter(order => ["paid", "completed", "refunded"].includes(order.status) && inActiveDateRange(order.day))
+      .forEach(order => {
+        const allocations = allocateOrderAmount(order);
+        (order.order_items || []).forEach(item => {
+          const qty = itemQty(item);
+          const productionUnit = nullableCost(item.production_cost_snapshot);
+          const packagingUnit = nullableCost(item.packaging_cost_snapshot);
+          const otherUnit = nullableCost(item.other_variable_cost_snapshot);
+          lines.push({
+            type: "sale",
+            productId: item.product_id,
+            productName: item.product_name || item.name || "商品",
+            category: itemCategory(item, productById(item.product_id)),
+            qty,
+            netSales: allocations.get(item) || 0,
+            cogs: productionUnit === null ? null : productionUnit * qty,
+            variableCosts: packagingUnit === null || otherUnit === null ? null : (packagingUnit + otherUnit) * qty,
+            snapshotStatus: item.cost_snapshot_status || "unknown"
+          });
+        });
+      });
+
+    profitabilityAdjustments
+      .filter(adjustment => adjustment.adjustment_type === "full_refund" && adjustment.business_date && inActiveDateRange(adjustment.business_date))
+      .forEach(adjustment => {
+        const order = officialOrders.find(row => row.id === adjustment.order_id);
+        if (!order) return;
+        const refundAmount = Math.abs(Number(adjustment.net_sales_delta || 0));
+        const allocations = allocateOrderAmount(order, refundAmount);
+        (order.order_items || []).forEach(item => {
+          const qty = itemQty(item);
+          const productionUnit = nullableCost(item.production_cost_snapshot);
+          lines.push({
+            type: "refund",
+            productId: item.product_id,
+            productName: item.product_name || item.name || "商品",
+            category: itemCategory(item, productById(item.product_id)),
+            qty: -qty,
+            netSales: -(allocations.get(item) || 0),
+            cogs: productionUnit === null ? null : -(productionUnit * qty),
+            variableCosts: 0,
+            snapshotStatus: adjustment.cost_status || item.cost_snapshot_status || "unknown"
+          });
+        });
+      });
+    return lines;
+  }
+
+  function summarizeProfitability(lines) {
+    return lines.reduce((summary, line) => {
+      summary.netSales += line.netSales;
+      summary.qty += line.qty;
+      if (line.cogs === null) summary.unknownCogs += 1;
+      else summary.cogs += line.cogs;
+      if (line.variableCosts === null) summary.unknownVariable += 1;
+      else summary.variableCosts += line.variableCosts;
+      if (line.cogs === null || line.variableCosts === null) summary.unknownContribution += 1;
+      else summary.contribution += line.netSales - line.cogs - line.variableCosts;
+      if (line.snapshotStatus === "review") summary.review += 1;
+      return summary;
+    }, {
+      netSales: 0, cogs: 0, variableCosts: 0, contribution: 0, qty: 0,
+      unknownCogs: 0, unknownVariable: 0, unknownContribution: 0, review: 0
+    });
+  }
+
+  function renderProfitabilityBreakdown(container, lines, keyForLine, labelForKey) {
+    if (!container) return;
+    const grouped = new Map();
+    lines.forEach(line => {
+      const key = keyForLine(line);
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(line);
+    });
+    const rows = [...grouped.entries()]
+      .map(([key, groupedLines]) => ({ key, label: labelForKey(key, groupedLines[0]), summary: summarizeProfitability(groupedLines) }))
+      .sort((a, b) => b.summary.netSales - a.summary.netSales);
+    container.innerHTML = rows.length ? rows.map(row => {
+      const summary = row.summary;
+      const cogsKnown = summary.unknownCogs === 0;
+      const variableKnown = summary.unknownVariable === 0;
+      const contributionKnown = summary.unknownContribution === 0;
+      const rate = contributionKnown && summary.netSales !== 0 ? summary.contribution / summary.netSales * 100 : null;
+      return `<div class="list-row profitability-row">
+        <strong class="profitability-name">${escapeHtml(row.label)}<small>${summary.qty} 件</small></strong>
+        <span>${POS.money(summary.netSales)}</span>
+        <span class="${cogsKnown ? "" : "profitability-unknown"}">${cogsKnown ? POS.money(summary.cogs) : "UNKNOWN"}</span>
+        <span class="profitability-variable ${variableKnown ? "" : "profitability-unknown"}">${variableKnown ? POS.money(summary.variableCosts) : "UNKNOWN"}</span>
+        <span class="profitability-rate ${contributionKnown ? "" : "profitability-unknown"}">${contributionKnown ? POS.money(summary.contribution) : "UNKNOWN"}<small>${rate === null ? "" : `${rate.toFixed(1)}%`}</small></span>
+      </div>`;
+    }).join("") : `<div class="empty">当前范围内没有盈利数据。</div>`;
+  }
+
+  function renderProfitability() {
+    if (!el.profitNetSales) return;
+    if (!profitabilityEnabled) {
+      el.profitabilityCoverage.textContent = "需要 Phase 1 数据库升级；历史未知成本不会按零计算";
+      [el.profitCogs, el.profitVariableCosts, el.profitContribution, el.profitContributionRate].forEach(node => { if (node) node.textContent = "UNKNOWN"; });
+      if (el.profitabilityByProduct) el.profitabilityByProduct.innerHTML = `<div class="empty">盈利数据表尚未启用。</div>`;
+      if (el.profitabilityByCategory) el.profitabilityByCategory.innerHTML = `<div class="empty">盈利数据表尚未启用。</div>`;
+      return;
+    }
+
+    const lines = profitabilityLines();
+    const summary = summarizeProfitability(lines);
+    const cogsKnown = summary.unknownCogs === 0;
+    const variableKnown = summary.unknownVariable === 0;
+    const contributionKnown = summary.unknownContribution === 0;
+    const rate = contributionKnown && summary.netSales !== 0 ? summary.contribution / summary.netSales * 100 : null;
+    const knownLines = lines.length - summary.unknownContribution;
+
+    el.profitNetSales.textContent = POS.money(summary.netSales);
+    el.profitCogs.textContent = cogsKnown ? POS.money(summary.cogs) : "UNKNOWN";
+    el.profitCogsDetail.textContent = cogsKnown ? "全部成本已知" : `已知 ${POS.money(summary.cogs)} · ${summary.unknownCogs} 行未知`;
+    el.profitVariableCosts.textContent = variableKnown ? POS.money(summary.variableCosts) : "UNKNOWN";
+    el.profitVariableDetail.textContent = variableKnown ? "包装＋其他变动成本" : `已知 ${POS.money(summary.variableCosts)} · ${summary.unknownVariable} 行未知`;
+    el.profitContribution.textContent = contributionKnown ? POS.money(summary.contribution) : "UNKNOWN";
+    el.profitContributionDetail.textContent = contributionKnown ? "净销售额－COGS－变动成本" : `仅 ${knownLines}/${lines.length} 行可完整计算`;
+    el.profitContributionRate.textContent = rate === null ? "UNKNOWN" : `${rate.toFixed(1)}%`;
+    el.profitabilityCoverage.textContent = `${rangeLabel()} · ${knownLines}/${lines.length} 行成本完整${summary.review ? ` · ${summary.review} 行时间待复核` : ""}`;
+
+    renderProfitabilityBreakdown(el.profitabilityByProduct, lines, line => line.productId || line.productName, (key, line) => line.productName || key);
+    renderProfitabilityBreakdown(el.profitabilityByCategory, lines, line => line.category || "other", key => POS.categoryLabel(key));
   }
 
   function rangeLabel() {
@@ -1126,6 +1323,7 @@
 
     el.menuEditor.innerHTML = visibleProducts.map(product => {
       const isOriginalIcecream = currentProductIds.has(product.id);
+      const currentCost = currentProductCost(product.id);
       return `
       <form class="menu-row" data-product-form="${escapeAttr(product.id)}">
         <img class="menu-thumb" src="${escapeAttr(POS.safeImageUrl(product.image_path) || "assets/icons/app-icon-512.png")}" alt="${escapeAttr(product.name)}">
@@ -1185,6 +1383,23 @@
           <input class="field-input" name="price" type="number" min="0" step="1000" value="${escapeAttr(product.selling_price)}" required>
         </label>
         <label>
+          单件生产成本 KIP
+          <input class="field-input" name="production_cost" type="number" min="0" step="1" value="${escapeAttr(costInputValue(currentCost && currentCost.production_cost))}" placeholder="UNKNOWN">
+        </label>
+        <label>
+          单件包装成本 KIP
+          <input class="field-input" name="packaging_cost" type="number" min="0" step="1" value="${escapeAttr(costInputValue(currentCost && currentCost.packaging_cost))}" placeholder="UNKNOWN">
+        </label>
+        <label>
+          单件其他变动成本 KIP
+          <input class="field-input" name="other_variable_cost" type="number" min="0" step="1" value="${escapeAttr(costInputValue(currentCost && currentCost.other_variable_cost))}" placeholder="UNKNOWN">
+        </label>
+        <label>
+          成本备注
+          <input class="field-input" name="cost_note" value="" placeholder="本次成本变更原因">
+          <small>${currentCost ? `当前版本生效于 ${escapeHtml(String(currentCost.effective_from || "").replace("T", " ").slice(0, 16))}` : "当前成本为 UNKNOWN"}</small>
+        </label>
+        <label>
           库存
           <input class="field-input" type="number" value="${escapeAttr(product.stock)}" disabled title="请在库存页面调整">
         </label>
@@ -1242,6 +1457,7 @@
           <input class="field-input" name="upsell_priority" type="number" step="1" value="${Number(product.upsell_priority || 0)}">
         </label>
         <button class="button primary" type="submit">保存</button>
+        ${POS.canManage(currentRole) ? `<button class="button" type="button" data-save-cost="${escapeAttr(product.id)}">保存成本版本</button>` : ""}
         ${isOriginalIcecream ? "" : `<button class="button danger" type="button" data-delete-product="${escapeAttr(product.id)}">删除</button>`}
       </form>
     `;
@@ -1557,6 +1773,7 @@
     renderBars(el.categorySummary, categoryRows, "当前范围内还没有类别数据。");
     renderProductPerformance(activeOrders);
     renderOperationsAlerts(summaryDay, activeOrders);
+    renderProfitability();
 
     const manager = !p1Enabled || POS.canManage(currentRole);
     const canRecordWaste = !p1Enabled || currentRole !== "viewer";
@@ -1736,6 +1953,70 @@
       }
     }
     return result;
+  }
+
+  function optionalCostValue(formData, name) {
+    const raw = String(formData.get(name) ?? "").trim();
+    if (!raw) return { valid: true, value: null };
+    if (!/^\d+$/.test(raw)) return { valid: false, value: null };
+    const value = Number(raw);
+    return { valid: Number.isSafeInteger(value) && value >= 0, value };
+  }
+
+  async function productCostRequest(key, payload) {
+    const userId = currentSession && currentSession.user && currentSession.user.id;
+    if (!userId) throw new Error("请先登录 / Sign in first");
+    const storageKey = `patuxai-cost-request:${userId}:${key}`;
+    let request = JSON.parse(window.localStorage.getItem(storageKey) || "null");
+    if (!request) {
+      request = { rpc: "set_product_costs_p1", payload: { ...payload, p_request_id: crypto.randomUUID() } };
+      window.localStorage.setItem(storageKey, JSON.stringify(request));
+    } else {
+      POS.showToast("正在确认上次成本操作；本次新输入尚未提交 / Retrying previous cost request");
+    }
+    const result = await client.rpc(request.rpc, request.payload);
+    if (!result.error || /^(?:P0001|22[0-9A-Z]{3}|23[0-9A-Z]{3}|42501)$/.test(result.error.code || "") ||
+        /PHASE1:/.test(result.error && result.error.message || "")) {
+      const stored = JSON.parse(window.localStorage.getItem(storageKey) || "null");
+      if (stored && stored.payload.p_request_id === request.payload.p_request_id) window.localStorage.removeItem(storageKey);
+    }
+    return result;
+  }
+
+  async function saveProductCosts(productId, button) {
+    if (!profitabilityEnabled) {
+      POS.showToast("需要 Phase 1 数据库升级 / Phase 1 migration required");
+      return false;
+    }
+    const form = button && button.closest("[data-product-form]");
+    if (!form) return false;
+    const formData = new FormData(form);
+    const production = optionalCostValue(formData, "production_cost");
+    const packaging = optionalCostValue(formData, "packaging_cost");
+    const other = optionalCostValue(formData, "other_variable_cost");
+    if (![production, packaging, other].every(cost => cost.valid)) {
+      POS.showToast("成本必须是非负整数；未知成本请留空");
+      return false;
+    }
+    POS.setBusy(button, true, "保存中");
+    try {
+      const result = await productCostRequest(`product:${productId}`, {
+        p_product_id: productId,
+        p_production_cost: production.value,
+        p_packaging_cost: packaging.value,
+        p_other_variable_cost: other.value,
+        p_note: String(formData.get("cost_note") || "").trim()
+      });
+      if (result.error) throw result.error;
+      POS.showToast(result.data && result.data.unchanged ? "成本未变化" : "新成本版本已保存");
+      await refresh();
+      return true;
+    } catch (error) {
+      POS.showToast(error.message || "成本保存失败");
+      return false;
+    } finally {
+      POS.setBusy(button, false);
+    }
   }
 
   async function saveStock(productId, button) {
@@ -1918,6 +2199,9 @@
     const lowStock = Number(formData.get("low_stock_threshold") || lowStockThreshold);
     const trackInventory = formData.has("track_inventory");
     const note = String(formData.get("note") || "").trim();
+    const productionCost = optionalCostValue(formData, "production_cost");
+    const packagingCost = optionalCostValue(formData, "packaging_cost");
+    const otherVariableCost = optionalCostValue(formData, "other_variable_cost");
 
     if (!name || !category) {
       POS.showToast("产品名称和分类不能为空");
@@ -1925,6 +2209,10 @@
     }
     if (!Number.isFinite(price) || price < 0 || !Number.isSafeInteger(stock) || stock < 0 || !Number.isFinite(lowStock) || lowStock < 0) {
       POS.showToast("价格、库存和低库存提醒必须是 0 或更大的数字");
+      return;
+    }
+    if (![productionCost, packagingCost, otherVariableCost].every(cost => cost.valid)) {
+      POS.showToast("成本必须是非负整数；未知成本请留空");
       return;
     }
 
@@ -1978,6 +2266,27 @@
     if (result.error) {
       POS.showToast(result.error.message && result.error.message.includes("is_deleted") ? "需要先执行产品管理数据库升级" : result.error.message || "新增失败");
       return;
+    }
+
+    const createdProductId = result.data && result.data.product_id;
+    const hasEnteredCost = [productionCost, packagingCost, otherVariableCost].some(cost => cost.value !== null);
+    if (hasEnteredCost && createdProductId) {
+      if (!profitabilityEnabled) {
+        POS.showToast("产品已新增；成本需在 Phase 1 数据库升级后保存");
+      } else {
+        const costResult = await productCostRequest(`new-product:${createdProductId}`, {
+          p_product_id: createdProductId,
+          p_production_cost: productionCost.value,
+          p_packaging_cost: packagingCost.value,
+          p_other_variable_cost: otherVariableCost.value,
+          p_note: "Initial product cost"
+        });
+        if (costResult.error) {
+          POS.showToast(`产品已新增；成本保存失败：${costResult.error.message || "请重试"}`);
+          await refresh();
+          return;
+        }
+      }
     }
 
     form.reset();
@@ -2741,6 +3050,11 @@
     const saveStockButton = event.target.closest("[data-save-stock]");
     if (saveStockButton) {
       saveStock(saveStockButton.dataset.saveStock, saveStockButton);
+      return;
+    }
+    const saveCostButton = event.target.closest("[data-save-cost]");
+    if (saveCostButton) {
+      saveProductCosts(saveCostButton.dataset.saveCost, saveCostButton);
       return;
     }
     const activeButton = event.target.closest("[data-toggle-active]");

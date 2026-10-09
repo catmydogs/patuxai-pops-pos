@@ -1,5 +1,5 @@
 (function () {
-  const appVersion = "20260917-phase0-r39";
+  const appVersion = "20261006-phase1-profitability-r40";
   let databaseReachable = null;
 
   function markDatabaseReachable(reachable) {

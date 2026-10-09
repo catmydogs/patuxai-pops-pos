@@ -2338,6 +2338,57 @@ th {
   font-size: 15px;
 }
 
+.profitability-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.profitability-stats {
+  padding: 0;
+}
+
+.profitability-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.profitability-grid > section {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbfd;
+}
+
+.profitability-grid h3 {
+  margin: 0;
+  padding: 14px 16px 4px;
+  font-size: 15px;
+}
+
+.profitability-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) repeat(4, minmax(86px, auto));
+  gap: 10px;
+  align-items: center;
+}
+
+.profitability-row span,
+.profitability-row small {
+  color: var(--muted);
+  text-align: right;
+}
+
+.profitability-row .profitability-name {
+  color: var(--text);
+  text-align: left;
+}
+
+.profitability-unknown {
+  color: var(--danger) !important;
+  font-weight: 800;
+}
+
 .performance-row,
 .business-day-row {
   display: flex;
@@ -2440,10 +2491,14 @@ th {
 
 @media (max-width: 980px) {
   .product-performance { grid-template-columns: 1fr; }
+  .profitability-grid { grid-template-columns: 1fr; }
   .business-day-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 640px) {
+  .profitability-row { grid-template-columns: minmax(100px, 1fr) repeat(2, minmax(72px, auto)); }
+  .profitability-row .profitability-variable,
+  .profitability-row .profitability-rate { display: none; }
   .business-day-form { grid-template-columns: 1fr; }
   .business-day-form .business-note { grid-column: auto; }
 }

@@ -968,6 +968,11 @@
 
   function makeLocalOrder(totals) {
     const clientOrderId = makeId();
+    const capturedAt = new Date();
+    const timeText = [capturedAt.getHours(), capturedAt.getMinutes(), capturedAt.getSeconds()]
+      .map(value => String(value).padStart(2, "0"))
+      .join(":");
+    const capturedAtIso = capturedAt.toISOString();
     const complimentaryReason = payMethod === "complimentary"
       ? (String(el.complimentaryReasonInput && el.complimentaryReasonInput.value || "").trim() || "赠送")
       : "";
@@ -978,7 +983,7 @@
       client_order_id: clientOrderId,
       shift_id: currentShift && currentShift.shift_id,
       day: currentShift && currentShift.business_date ? currentShift.business_date : POS.todayKey(),
-      time_text: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
+      time_text: timeText,
       payment_method: payMethod,
       total: totals.total,
       total_amount: totals.subtotal,
@@ -987,8 +992,8 @@
       status: "pending",
       sync_status: "pending",
       attempt_count: 0,
-      created_at: new Date().toISOString(),
-      local_updated_at: new Date().toISOString(),
+      created_at: capturedAtIso,
+      local_updated_at: capturedAtIso,
       is_test: false,
       promotion_code: "",
       promotion_id: appliedPromotion && appliedPromotion.promotion_id,
